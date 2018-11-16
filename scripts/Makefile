@@ -9,7 +9,6 @@ HOST_EXTRACFLAGS += -I$(srctree)/tools/include
 
 always-$(CONFIG_BUILD_BIN2C)			+= bin2c
 always-$(CONFIG_KALLSYMS)			+= kallsyms
-always-$(BUILD_C_RECORDMCOUNT)			+= recordmcount
 always-$(CONFIG_BUILDTIME_TABLE_SORT)		+= sorttable
 always-$(CONFIG_ASN1)				+= asn1_compiler
 always-$(CONFIG_MODULE_SIG_FORMAT)		+= sign-file
