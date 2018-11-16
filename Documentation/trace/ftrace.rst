@@ -2627,7 +2627,7 @@ starts of pointing to a simple return. (Enabling FTRACE will
 include the -pg switch in the compiling of the kernel.)
 
 At compile time every C file object is run through the
-recordmcount program (located in the scripts directory). This
+recordmcount program (located in the tools/objtool directory). This
 program will parse the ELF headers in the C object to find all
 the locations in the .text section that call mcount. Starting
 with gcc version 4.6, the -mfentry has been added for x86, which

@@ -261,7 +261,7 @@ You need very few things to get the syscalls tracing in an arch.
 HAVE_FTRACE_MCOUNT_RECORD
 -------------------------
 
-See scripts/recordmcount.pl for more info.  Just fill in the arch-specific
+See tools/objtool/recordmcount.pl for more info.  Just fill in the arch-specific
 details for how to locate the addresses of mcount call sites via objdump.
 This option doesn't make much sense without also implementing dynamic ftrace.
 
@@ -379,7 +379,7 @@ linux/ftrace.h for the functions::
 	ftrace_make_call()
 
 The rec->ip value is the address of the mcount call site that was collected
-by the scripts/recordmcount.pl during build time.
+by the tools/objtool/recordmcount.pl during build time.
 
 The last function is used to do runtime patching of the active tracer.  This
 will be modifying the assembly code at the location of the ftrace_call symbol
