@@ -6,8 +6,8 @@ conmakehash
 kallsyms
 pnmtologo
 unifdef
-recordmcount
-sortextable
+ihex2fw
+check-lc_ctype
 asn1_compiler
 extract-cert
 sign-file

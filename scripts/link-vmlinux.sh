@@ -128,7 +128,7 @@ mksysmap()
 
 sortextable()
 {
-	${objtree}/scripts/sortextable ${1}
+	${objtree}/tools/objtool/sortextable ${1}
 }
 
 # Delete output files in case of error

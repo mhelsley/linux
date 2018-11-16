@@ -800,6 +800,9 @@ ifdef CONFIG_DYNAMIC_FTRACE
 	endif
 endif
 endif
+ifdef CONFIG_BUILDTIME_EXTABLE_SORT
+	export CONFIG_BUILDTIME_EXTABLE_SORT
+endif
 
 # We trigger additional mismatches with less inlining
 ifdef CONFIG_DEBUG_SECTION_MISMATCH

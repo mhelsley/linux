@@ -20,3 +20,7 @@ $(OUTPUT)libstring.o: ../lib/string.c FORCE
 $(OUTPUT)str_error_r.o: ../lib/str_error_r.c FORCE
 	$(call rule_mkdir)
 	$(call if_changed_dep,cc_o_c)
+
+recordmcount-y += recordmcount.o
+
+sortextable-y += sortextable.o
