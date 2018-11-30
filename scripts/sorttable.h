@@ -11,7 +11,7 @@
  * Some of code was taken out of arch/x86/kernel/unwind_orc.c, written by:
  * Copyright (C) 2017 Josh Poimboeuf <jpoimboe@redhat.com>
  *
- * Some of this code was taken out of recordmcount.h written by:
+ * Some of this code was taken out of objtool mcount written by:
  *
  * Copyright 2009 John F. Reiser <jreiser@BitWagon.com>. All rights reserved.
  * Copyright 2010 Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.

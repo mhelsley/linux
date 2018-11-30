@@ -14,5 +14,7 @@ extern bool is_cmd_check_available(void);
 extern int cmd_check(int argc, const char **argv);
 extern bool is_cmd_orc_available(void);
 extern int cmd_orc(int argc, const char **argv);
+extern bool is_cmd_mcount_available(void);
+extern int cmd_mcount(int argc, const char **argv);
 
 #endif /* _BUILTIN_H */

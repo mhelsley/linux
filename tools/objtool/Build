@@ -2,6 +2,7 @@ objtool-y += arch/missing/
 objtool-y += arch/$(SRCARCH)/
 objtool-y += builtin-check.o
 objtool-y += builtin-orc.o
+objtool-y += builtin-mcount.o recordmcount.o
 objtool-y += elf.o
 objtool-y += objtool.o
 
@@ -27,5 +28,3 @@ $(OUTPUT)str_error_r.o: ../lib/str_error_r.c FORCE
 $(OUTPUT)librbtree.o: ../lib/rbtree.c FORCE
 	$(call rule_mkdir)
 	$(call if_changed_dep,cc_o_c)
-
-recordmcount-y += recordmcount.o

@@ -62,7 +62,7 @@ static inline unsigned long ftrace_call_adjust(unsigned long addr)
 		return addr + AARCH64_INSN_SIZE;
 	/*
 	 * addr is the address of the mcount call instruction.
-	 * recordmcount does the necessary offset calculation.
+	 * "objtool mcount" does the necessary offset calculation.
 	 */
 	return addr;
 }
