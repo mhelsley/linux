@@ -41,12 +41,18 @@ struct cmd_struct {
 	const char *help;
 };
 
+static int cmd_nop(int argc, const char **argv)
+{
+	return EXIT_FAILURE;
+}
+
 static const char objtool_usage_string[] =
 	"objtool COMMAND [ARGS]";
 
 static struct cmd_struct objtool_cmds[] = {
 	{"check",	cmd_check,	"Perform stack metadata validation on an object file" },
 	{"orc",		cmd_orc,	"Generate in-place ORC unwind tables for an object file" },
+	{"mcount",	cmd_mcount,	"Construct a table of locations of calls to mcount. Useful for ftrace."},
 };
 
 bool help;

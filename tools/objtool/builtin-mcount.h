@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Josh Poimboeuf <jpoimboe@redhat.com>
+ * Copyright (C) 2019 Matt Helsley <mhelsley@vmware.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -14,21 +14,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef _BUILTIN_H
-#define _BUILTIN_H
+#ifndef BUILTIN_SUBCMD_MCOUNT
+#define BUILTIN_SUBCMD_MCOUNT 1
 
-#include <subcmd/parse-options.h>
+extern int
+record_mcount(int argc, const char **argv);
 
-extern const struct option check_options[];
-extern bool no_fp, no_unreachable, retpoline, module;
-
-extern int cmd_check(int argc, const char **argv);
-extern int cmd_orc(int argc, const char **argv);
-
-#ifdef BUILD_C_RECORDMCOUNT
-extern int cmd_mcount(int argc, const char **argv);
-#else
-#define cmd_mcount cmd_nop
-#endif
-
-#endif /* _BUILTIN_H */
+#endif /* BUILTIN_SUBCMD_MCOUNT */

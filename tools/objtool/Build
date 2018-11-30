@@ -1,9 +1,11 @@
 objtool-y += arch/$(SRCARCH)/
 objtool-y += builtin-check.o
 objtool-y += builtin-orc.o
+objtool-$(BUILD_C_RECORDMCOUNT) += builtin-mcount.o
 objtool-y += check.o
 objtool-y += orc_gen.o
 objtool-y += orc_dump.o
+objtool-$(BUILD_C_RECORDMCOUNT) += recordmcount.o
 objtool-y += elf.o
 objtool-y += special.o
 objtool-y += objtool.o
@@ -20,7 +22,5 @@ $(OUTPUT)libstring.o: ../lib/string.c FORCE
 $(OUTPUT)str_error_r.o: ../lib/str_error_r.c FORCE
 	$(call rule_mkdir)
 	$(call if_changed_dep,cc_o_c)
-
-recordmcount-y += recordmcount.o
 
 sortextable-y += sortextable.o
