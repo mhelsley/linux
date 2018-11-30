@@ -2626,8 +2626,8 @@ every kernel function, produced by the -pg switch in gcc),
 starts of pointing to a simple return. (Enabling FTRACE will
 include the -pg switch in the compiling of the kernel.)
 
-At compile time every C file object is run through the
-recordmcount program (located in the tools/objtool directory). This
+At compile time every C file object is run through objtool's
+mcount subcommand (located in the tools/objtool directory). This
 program will parse the ELF headers in the C object to find all
 the locations in the .text section that call mcount. Starting
 with gcc version 4.6, the -mfentry has been added for x86, which
@@ -2641,7 +2641,7 @@ can be traced.
 
 A section called "__mcount_loc" is created that holds
 references to all the mcount/fentry call sites in the .text section.
-The recordmcount program re-links this section back into the
+Running "objtool mcount" re-links this section back into the
 original object. The final linking stage of the kernel will add all these
 references into a single table.
 

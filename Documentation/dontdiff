@@ -210,7 +210,7 @@ r420_reg_safe.h
 r600_reg_safe.h
 randomize_layout_hash.h
 randomize_layout_seed.h
-recordmcount
+objtool
 relocs
 rlim_names.h
 rn50_reg_safe.h

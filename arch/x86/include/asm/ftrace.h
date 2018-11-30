@@ -24,7 +24,7 @@ static inline unsigned long ftrace_call_adjust(unsigned long addr)
 {
 	/*
 	 * addr is the address of the mcount call instruction.
-	 * recordmcount does the necessary offset calculation.
+	 * "objtool mcount" does the necessary offset calculation.
 	 */
 	return addr;
 }
