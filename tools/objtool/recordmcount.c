@@ -34,6 +34,8 @@
 
 #include "builtin-mcount.h"
 
+#include "elf.h"
+
 #ifndef EM_AARCH64
 #define EM_AARCH64	183
 #define R_AARCH64_NONE		0
@@ -53,6 +55,8 @@ static int file_updated; /* flag to state file was changed */
 static void *file_ptr;	/* current file pointer location */
 static void *file_append; /* added to the end of the file */
 static size_t file_append_size; /* how much is added to end of file */
+
+static struct elf *lf = NULL;
 
 /* setjmp() return values */
 enum {
@@ -74,6 +78,8 @@ cleanup(void)
 	file_append = NULL;
 	file_append_size = 0;
 	file_updated = 0;
+	if (lf)
+		elf_close(lf);
 }
 
 static void __attribute__((noreturn))
@@ -284,7 +290,12 @@ static int make_nop_arm64(void *map, size_t const offset)
  */
 static void *mmap_file(char const *fname)
 {
-	fd_map = open(fname, O_RDONLY);
+	lf = elf_open(fname, O_RDONLY);
+	if (!lf) {
+		perror(fname);
+		fail_file();
+	}
+	fd_map = lf->fd;
 	if (fd_map < 0 || fstat(fd_map, &sb) < 0) {
 		perror(fname);
 		fail_file();
@@ -302,6 +313,8 @@ static void *mmap_file(char const *fname)
 		uread(fd_map, file_map, sb.st_size);
 	}
 	close(fd_map);
+	elf_close(lf);
+	lf = NULL;
 
 	file_end = file_map + sb.st_size;
 
