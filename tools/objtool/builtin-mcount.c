@@ -34,6 +34,7 @@
 
 static const char *mcount_usage[] = {
 	"objtool mcount record [<options>] file.o [file2.o ...]",
+	"objtool mcount show [<options>] file.o [file2.o ...]",
 	NULL,
 };
 
@@ -50,6 +51,14 @@ int cmd_mcount(int argc, const char **argv)
 	argc--; argv++;
 	if (argc <= 0)
 		usage_with_options(mcount_usage, mcount_options);
+
+	if (!strcmp(argv[0], "show")) {
+		argc = parse_options(argc, argv, mcount_options, mcount_usage, 0);
+		if (argc < 1)
+			usage_with_options(mcount_usage, mcount_options);
+
+		return record_mcount(argc, argv);
+	}
 
 	if (!strncmp(argv[0], "rec", 3)) {
 		if (argc != 2)
