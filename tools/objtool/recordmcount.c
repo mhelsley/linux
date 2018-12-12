@@ -204,8 +204,6 @@ static void *mmap_file(char const *fname)
 	} else
 		mmap_failed = 0;
 out:
-	elf_close(lf);
-	lf = NULL;
 	fd_map = -1;
 
 	file_end = file_map + sb.st_size;
@@ -419,8 +417,6 @@ static int is_mcounted_section_name(char const *const txtname)
 		strcmp(".kprobes.text", txtname) == 0 ||
 		strcmp(".cpuidle.text", txtname) == 0;
 }
-
-static char const *already_has_rel_mcount = "success"; /* our work here is done! */
 
 /* 32 bit and 64 bit are very similar */
 #include "recordmcount.h"
