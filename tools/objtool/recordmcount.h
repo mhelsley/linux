@@ -27,7 +27,6 @@
 #undef nop_mcount
 #undef missing_sym
 #undef find_secsym_ndx
-#undef already_has_rel_mcount
 #undef __has_rel_mcount
 #undef has_rel_mcount
 #undef tot_relsize
@@ -59,7 +58,6 @@
 # define nop_mcount		nop_mcount_64
 # define missing_sym		missing_sym_64
 # define find_secsym_ndx	find64_secsym_ndx
-# define already_has_rel_mcount already_has_rel_mcount_64
 # define __has_rel_mcount	__has64_rel_mcount
 # define has_rel_mcount		has64_rel_mcount
 # define tot_relsize		tot64_relsize
@@ -95,7 +93,6 @@
 # define missing_sym		missing_sym_32
 # define find_secsym_ndx	find32_secsym_ndx
 # define __has_rel_mcount	__has32_rel_mcount
-# define already_has_rel_mcount already_has_rel_mcount_32
 # define has_rel_mcount		has32_rel_mcount
 # define tot_relsize		tot32_relsize
 # define get_sym_str_and_relp	get_sym_str_and_relp_32
@@ -469,8 +466,6 @@ static unsigned int find_secsym_ndx(unsigned const txtndx,
 	return missing_sym;
 }
 
-char const *already_has_rel_mcount = "success"; /* our work here is done! */
-
 /* Evade ISO C restriction: no declaration after statement in has_rel_mcount. */
 static char const *
 __has_rel_mcount(Elf_Shdr const *const relhdr,  /* is SHT_REL or SHT_RELA */
@@ -482,12 +477,6 @@ __has_rel_mcount(Elf_Shdr const *const relhdr,  /* is SHT_REL or SHT_RELA */
 	Elf_Shdr const *const txthdr = &shdr0[w(relhdr->sh_info)];
 	char const *const txtname = &shstrtab[w(txthdr->sh_name)];
 
-	if (strcmp("__mcount_loc", txtname) == 0) {
-		fprintf(stderr, "warning: __mcount_loc already exists: %s\n",
-			fname);
-		succeed_file();
-		return already_has_rel_mcount;
-	}
 	if (w(txthdr->sh_type) != SHT_PROGBITS ||
 	    !(_w(txthdr->sh_flags) & SHF_EXECINSTR))
 		return NULL;
@@ -516,10 +505,6 @@ static unsigned tot_relsize(Elf_Shdr const *const shdr0,
 
 	for (; nhdr; --nhdr, ++shdrp) {
 		txtname = has_rel_mcount(shdrp, shdr0, shstrtab, fname);
-		if (txtname == already_has_rel_mcount) {
-			totrelsz = 0;
-			break;
-		}
 		if (txtname && is_mcounted_section_name(txtname))
 			totrelsz += _w(shdrp->sh_size);
 	}
@@ -556,6 +541,11 @@ do_func(Elf_Ehdr *const ehdr, char const *const fname, unsigned const reltype)
 
 	int result = 0;
 
+	if (find_section_by_name(lf, "__mcount_loc") != NULL) {
+		succeed_file();
+		return 0;
+	}
+
 	totrelsz = tot_relsize(shdr0, shstrtab, fname);
 	if (totrelsz == 0) {
 		succeed_file();
@@ -575,11 +565,6 @@ do_func(Elf_Ehdr *const ehdr, char const *const fname, unsigned const reltype)
 	for (relhdr = shdr0, k = nhdr; k; --k, ++relhdr) {
 		char const *const txtname = has_rel_mcount(relhdr, shdr0,
 			shstrtab, fname);
-		if (txtname == already_has_rel_mcount) {
-			result = 0;
-			mlocp = mloc0; /* Nothing to be done; don't append! */
-			break;
-		}
 		if (txtname && is_mcounted_section_name(txtname)) {
 			uint_t recval = 0;
 			unsigned const int recsym = find_secsym_ndx(
