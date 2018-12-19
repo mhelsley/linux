@@ -179,7 +179,7 @@ static int MIPS_is_fake_mcount(Elf_Rel const *rp)
 
 /* Append the new shstrtab, Elf_Shdr[], __mcount_loc and its relocations. */
 static int append_func(Elf_Ehdr *const ehdr,
-			Elf_Shdr *const shstr,
+			GElf_Shdr *const shstr,
 			uint_t const *const mloc0,
 			uint_t const *const mlocp,
 			Elf_Rel const *const mrel0,
@@ -194,13 +194,13 @@ static int append_func(Elf_Ehdr *const ehdr,
 		:  ".rel__mcount_loc";
 	unsigned const old_shnum = w2(ehdr->e_shnum);
 	uint_t const old_shoff = _w(ehdr->e_shoff);
-	uint_t const old_shstr_sh_size   = _w(shstr->sh_size);
-	uint_t const old_shstr_sh_offset = _w(shstr->sh_offset);
-	uint_t t = 1 + strlen(mc_name) + _w(shstr->sh_size);
+	uint_t const old_shstr_sh_size   = shstr->sh_size;
+	uint_t const old_shstr_sh_offset = shstr->sh_offset;
+	uint_t t = 1 + strlen(mc_name) + shstr->sh_size;
 	uint_t new_e_shoff;
 
-	shstr->sh_size = _w(t);
-	shstr->sh_offset = _w(sb.st_size);
+	shstr->sh_size = t;
+	shstr->sh_offset = sb.st_size;
 	t += sb.st_size;
 	t += (_align & -t);  /* word-byte align */
 	new_e_shoff = t;
@@ -470,12 +470,12 @@ static unsigned int find_secsym_ndx(unsigned const txtndx,
 static char const *
 __has_rel_mcount(GElf_Shdr const *const relhdr,  /* is SHT_REL or SHT_RELA */
 		 Elf_Shdr const *const shdr0,
-		 char const *const shstrtab,
+		 size_t shstrndx,
 		 char const *const fname)
 {
 	/* .sh_info depends on .sh_type == SHT_REL[,A] */
 	Elf_Shdr const *const txthdr = &shdr0[relhdr->sh_info];
-	char const *const txtname = &shstrtab[w(txthdr->sh_name)];
+	char const *const txtname = elf_strptr(lf->elf, shstrndx, w(txthdr->sh_name)]);
 
 	if (w(txthdr->sh_type) != SHT_PROGBITS ||
 	    !(_w(txthdr->sh_flags) & SHF_EXECINSTR))
@@ -485,17 +485,17 @@ __has_rel_mcount(GElf_Shdr const *const relhdr,  /* is SHT_REL or SHT_RELA */
 
 static char const *has_rel_mcount(GElf_Shdr const *const relhdr,
 				  Elf_Shdr const *const shdr0,
-				  char const *const shstrtab,
+				  size_t shstrndx,
 				  char const *const fname)
 {
 	if (relhdr->sh_type != SHT_REL && relhdr->sh_type != SHT_RELA)
 		return NULL;
-	return __has_rel_mcount(relhdr, shdr0, shstrtab, fname);
+	return __has_rel_mcount(relhdr, shdr0, shstrndx, fname);
 }
 
 
 static unsigned tot_relsize(Elf_Shdr const *const shdr0,
-			    const char *const shstrtab,
+			    size_t shstrndx,
 			    const char *const fname)
 {
 	struct section *sec;
@@ -503,7 +503,7 @@ static unsigned tot_relsize(Elf_Shdr const *const shdr0,
 	char const *txtname;
 
 	list_for_each_entry(sec, &lf->sections, list) {
-		txtname = has_rel_mcount(&sec->sh, shdr0, shstrtab, fname);
+		txtname = has_rel_mcount(&sec->sh, shdr0, shstrndx, fname);
 		if (txtname && is_mcounted_section_name(txtname))
 			totrelsz += sec->sh.sh_size;
 	}
@@ -517,9 +517,7 @@ do_func(Elf_Ehdr *const ehdr, char const *const fname, unsigned const reltype)
 {
 	Elf_Shdr *const shdr0 = (Elf_Shdr *)(_w(ehdr->e_shoff)
 		+ (void *)ehdr);
-	Elf_Shdr *const shstr = &shdr0[w2(ehdr->e_shstrndx)];
-	char const *const shstrtab = (char const *)(_w(shstr->sh_offset)
-		+ (void *)ehdr);
+	size_t shstrndx;
 
 	GElf_Shdr const *relhdr;
 
@@ -536,7 +534,7 @@ do_func(Elf_Ehdr *const ehdr, char const *const fname, unsigned const reltype)
 	unsigned rel_entsize = 0;
 	unsigned symsec_sh_link = 0;
 
-	struct section *sec;
+	struct section *sec, *shstrsec;
 
 	int result = 0;
 
@@ -545,7 +543,17 @@ do_func(Elf_Ehdr *const ehdr, char const *const fname, unsigned const reltype)
 		return 0;
 	}
 
-	totrelsz = tot_relsize(shdr0, shstrtab, fname);
+	if (elf_getshdrstrndx(lf->elf, &shstrndx)) {
+		fail_file();
+		return -1;
+	}
+	shstrsec = find_section_by_index(lf, shstrndx);
+	if (!shstrsec) {
+		fail_file();
+		return -1;
+	}
+
+	totrelsz = tot_relsize(shdr0, shstrndx, fname);
 	if (totrelsz == 0) {
 		succeed_file();
 		return 0;
@@ -565,7 +573,7 @@ do_func(Elf_Ehdr *const ehdr, char const *const fname, unsigned const reltype)
 		char const *txtname;
 		relhdr = &sec->sh;
 		txtname = has_rel_mcount(relhdr, shdr0,
-			shstrtab, fname);
+					shstrndx, fname);
 		if (txtname && is_mcounted_section_name(txtname)) {
 			uint_t recval = 0;
 			unsigned const int recsym_index = find_secsym_ndx(
@@ -593,7 +601,8 @@ do_func(Elf_Ehdr *const ehdr, char const *const fname, unsigned const reltype)
 		}
 	}
 	if (!result && mloc0 != mlocp) {
-		result = append_func(ehdr, shstr, mloc0, mlocp, mrel0, mrelp,
+		result = append_func(ehdr, &shstrsec->sh,
+				     mloc0, mlocp, mrel0, mrelp,
 				     rel_entsize, symsec_sh_link);
 	}
 	free(mrel0);
