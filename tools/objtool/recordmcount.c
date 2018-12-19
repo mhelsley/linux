@@ -173,7 +173,7 @@ static void *mmap_file(char const *fname)
 	file_updated = 0;
 	sb.st_size = 0;
 
-	lf = elf_read(fname, O_RDONLY);
+	lf = elf_read(fname, O_RDWR);
 	if (!lf) {
 		perror(fname);
 		return NULL;
