@@ -32,8 +32,7 @@ struct section *find_section_by_name(struct elf *elf, const char *name)
 	return NULL;
 }
 
-static struct section *find_section_by_index(struct elf *elf,
-					     unsigned int idx)
+struct section *find_section_by_index(struct elf *elf, unsigned int idx)
 {
 	struct section *sec;
 
