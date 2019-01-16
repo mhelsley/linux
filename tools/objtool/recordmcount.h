@@ -24,7 +24,7 @@
 #undef mcount_adjust
 #undef sift_rel_mcount
 #undef nop_mcount
-#undef find_secsym_ndx
+#undef find_section_sym_index
 #undef has_rel_mcount
 #undef tot_relsize
 #undef get_mcountsym
@@ -53,7 +53,7 @@
 # define append_func		append64
 # define sift_rel_mcount	sift64_rel_mcount
 # define nop_mcount		nop_mcount_64
-# define find_secsym_ndx	find64_secsym_ndx
+# define find_section_sym_index	find64_section_sym_index
 # define has_rel_mcount		has64_rel_mcount
 # define tot_relsize		tot64_relsize
 # define get_sym_str_and_relp	get_sym_str_and_relp_64
@@ -85,7 +85,7 @@
 # define append_func		append32
 # define sift_rel_mcount	sift32_rel_mcount
 # define nop_mcount		nop_mcount_32
-# define find_secsym_ndx	find32_secsym_ndx
+# define find_section_sym_index	find32_section_sym_index
 # define has_rel_mcount		has32_rel_mcount
 # define tot_relsize		tot32_relsize
 # define get_sym_str_and_relp	get_sym_str_and_relp_32
@@ -430,31 +430,29 @@ static int nop_mcount(const struct section * const rels,
  *    Num:    Value  Size Type    Bind   Vis      Ndx Name
  *      2: 00000000     0 SECTION LOCAL  DEFAULT    1
  */
-static int find_secsym_ndx(unsigned const txtndx,
+static int find_section_sym_index(unsigned const txtndx,
 				char const *const txtname,
 				uint_t *const recvalp,
 				unsigned int *sym_index,
-				Elf_Shdr const *const symhdr,
 				Elf_Ehdr const *const ehdr)
 {
-	Elf_Sym const *const sym0 = (Elf_Sym const *)(_w(symhdr->sh_offset)
-		+ (void *)ehdr);
-	unsigned const nsym = _w(symhdr->sh_size) / _w(symhdr->sh_entsize);
-	Elf_Sym const *symp;
-	unsigned t;
+	struct symbol *sym;
+	struct section *txts = find_section_by_index(lf, txtndx);
 
-	for (symp = sym0, t = nsym; t; --t, ++symp) {
-		unsigned int const st_bind = ELF_ST_BIND(symp->st_info);
+	if (!txts) {
+		fprintf(stderr, "Cannot find section %u: %s.\n",
+			txtndx, txtname);
+		return missing_sym;
+	}
 
-		if (txtndx == w2(symp->st_shndx)
-			/* avoid STB_WEAK */
-		    && (STB_LOCAL == st_bind || STB_GLOBAL == st_bind)) {
+	list_for_each_entry(sym, &txts->symbol_list, list) {
+		if ((sym->bind == STB_LOCAL) || (sym->bind == STB_GLOBAL)) {
 			/* function symbols on ARM have quirks, avoid them */
 			if (w2(ehdr->e_machine) == EM_ARM
-			    && ELF_ST_TYPE(symp->st_info) == STT_FUNC)
+			    && sym->type == STT_FUNC)
 				continue;
 
-			*recvalp = _w(symp->st_value);
+			*recvalp = sym->sym.st_value;
 			*sym_index = symp - sym0;
 			return 0;
 		}
@@ -543,10 +541,8 @@ static int do_func(Elf_Ehdr *const ehdr
 			uint_t recval = 0;
 
 			symsec_sh_link = sec->sh.sh_link;
-			result = find_secsym_ndx(sec->sh.sh_info, txtname,
-						&recval, &recsym,
-						&shdr0[symsec_sh_link],
-						ehdr);
+			result = find_section_sym_index(sec->sh.sh_info,
+						txtname, &recval, &recsym, ehdr);
 			if (result)
 				goto out;
 
