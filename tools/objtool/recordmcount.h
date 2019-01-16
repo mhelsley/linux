@@ -25,7 +25,7 @@
 #undef sift_rel_mcount
 #undef nop_mcount
 #undef missing_sym
-#undef find_secsym_ndx
+#undef find_section_sym_index
 #undef has_rel_mcount
 #undef tot_relsize
 #undef get_mcountsym
@@ -55,7 +55,7 @@
 # define sift_rel_mcount	sift64_rel_mcount
 # define nop_mcount		nop_mcount_64
 # define missing_sym		missing_sym_64
-# define find_secsym_ndx	find64_secsym_ndx
+# define find_section_sym_index	find64_section_sym_index
 # define has_rel_mcount		has64_rel_mcount
 # define tot_relsize		tot64_relsize
 # define get_sym_str_and_relp	get_sym_str_and_relp_64
@@ -88,7 +88,7 @@
 # define sift_rel_mcount	sift32_rel_mcount
 # define nop_mcount		nop_mcount_32
 # define missing_sym		missing_sym_32
-# define find_secsym_ndx	find32_secsym_ndx
+# define find_section_sym_index	find32_section_sym_index
 # define has_rel_mcount		has32_rel_mcount
 # define tot_relsize		tot32_relsize
 # define get_sym_str_and_relp	get_sym_str_and_relp_32
@@ -425,6 +425,7 @@ static int nop_mcount(const struct section * const rels,
 
 static const unsigned int missing_sym = (unsigned int)-1;
 
+
 /*
  * Find a symbol in the given section, to be used as the base for relocating
  * the table of offsets of calls to mcount.  A local or global symbol suffices,
@@ -435,31 +436,29 @@ static const unsigned int missing_sym = (unsigned int)-1;
  *    Num:    Value  Size Type    Bind   Vis      Ndx Name
  *      2: 00000000     0 SECTION LOCAL  DEFAULT    1
  */
-static unsigned find_secsym_ndx(unsigned const txtndx,
+static unsigned int find_section_sym_index(unsigned const txtndx,
 				char const *const txtname,
 				uint_t *const recvalp,
-				Elf_Shdr const *const symhdr,
 				Elf_Ehdr const *const ehdr)
 {
-	Elf_Sym const *const sym0 = (Elf_Sym const *)(_w(symhdr->sh_offset)
-		+ (void *)ehdr);
-	unsigned const nsym = _w(symhdr->sh_size) / _w(symhdr->sh_entsize);
-	Elf_Sym const *symp;
-	unsigned t;
+	struct symbol *sym;
+	struct section *txts = find_section_by_index(lf, txtndx);
 
-	for (symp = sym0, t = nsym; t; --t, ++symp) {
-		unsigned int const st_bind = ELF_ST_BIND(symp->st_info);
+	if (!txts) {
+		fprintf(stderr, "Cannot find section %u: %s.\n",
+			txtndx, txtname);
+		return missing_sym;
+	}
 
-		if (txtndx == w2(symp->st_shndx)
-			/* avoid STB_WEAK */
-		    && (STB_LOCAL == st_bind || STB_GLOBAL == st_bind)) {
+	list_for_each_entry(sym, &txts->symbol_list, list) {
+		if ((sym->bind == STB_LOCAL) || (sym->bind == STB_GLOBAL)) {
 			/* function symbols on ARM have quirks, avoid them */
 			if (w2(ehdr->e_machine) == EM_ARM
-			    && ELF_ST_TYPE(symp->st_info) == STT_FUNC)
+			    && sym->type == STT_FUNC)
 				continue;
 
-			*recvalp = _w(symp->st_value);
-			return symp - sym0;
+			*recvalp = sym->sym.st_value;
+			return sym->idx;
 		}
 	}
 	fprintf(stderr, "Cannot find symbol for section %u: %s.\n",
@@ -546,9 +545,8 @@ static int do_func(Elf_Ehdr *const ehdr
 			unsigned int recsym_index;
 
 			symsec_sh_link = sec->sh.sh_link;
-			recsym_index = find_secsym_ndx(
+			recsym_index = find_section_sym_index(
 				sec->sh.sh_info, txtname, &recval,
-				&shdr0[symsec_sh_link],
 				ehdr);
 			if (recsym_index == missing_sym) {
 				result = -1;
