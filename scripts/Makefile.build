@@ -253,11 +253,11 @@ endif
 define rule_cc_o_c
 	$(call cmd,checksrc)
 	$(call cmd_and_fixdep,cc_o_c)
-	$(call cmd,gen_ksymdeps)
 	$(call cmd,checkdoc)
+	$(call cmd,gen_ksymdeps)
 	$(call cmd,objtool)
-	$(call cmd,modversions_c)
 	$(call cmd,record_mcount)
+	$(call cmd,modversions_c)
 endef
 
 define rule_as_o_S
