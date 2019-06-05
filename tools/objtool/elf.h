@@ -87,6 +87,7 @@ struct section *elf_create_section(struct elf *elf, const char *name, size_t
 				   entsize, int nr);
 struct section *elf_create_rela_section(struct elf *elf, struct section *base);
 int elf_rebuild_rela_section(struct section *sec);
+bool elf_changed(struct elf *elf);
 int elf_write(struct elf *elf);
 void elf_close(struct elf *elf);
 

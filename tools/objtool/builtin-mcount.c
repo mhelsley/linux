@@ -33,12 +33,15 @@
 #ifndef cmd_mcount
 #include "builtin-mcount.h"
 
+
+static const char *const mcount_subcmds[] = { "record", NULL };
+
 static const char * const mcount_usage[] = {
 	"objtool mcount record [<options>] file.o [file2.o ...]",
 	NULL,
 };
 
-bool warn_on_notrace_sect;
+static bool warn_on_notrace_sect;
 
 const static struct option mcount_options[] = {
 	OPT_BOOLEAN('w', "warn-on-notrace-section", &warn_on_notrace_sect,
@@ -47,7 +50,7 @@ const static struct option mcount_options[] = {
 	OPT_END(),
 };
 
-int cmd_mcount(int argc, const char **argv)
+static int mcount(int argc, const char **argv, struct elf **elf)
 {
 	argc--; argv++;
 	if (argc <= 0)
@@ -69,4 +72,15 @@ int cmd_mcount(int argc, const char **argv)
 
 	return 0;
 }
+
+const struct cmd_struct cmd_mcount = {
+	.name = "mcount",
+	.subcmds = mcount_subcmds,
+	.short_description = "Construct a table of locations of calls to mcount. Useful for ftrace."
+	.options = mcount_options,
+	.usage = mcount_usage,
+	.may_write = true,
+	.fn = mcount,
+};
+
 #endif /* !def cmd_mcount */

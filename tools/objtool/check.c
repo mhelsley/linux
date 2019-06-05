@@ -24,7 +24,6 @@ struct alternative {
 	bool skip_orig;
 };
 
-const char *objname;
 struct cfi_state initial_func_cfi;
 
 struct instruction *find_insn(struct objtool_file *file,
@@ -2401,13 +2400,11 @@ static void cleanup(struct objtool_file *file)
 
 static struct objtool_file file;
 
-int check(const char *_objname, bool orc)
+int check(struct elf *elf, bool orc)
 {
 	int ret, warnings = 0;
 
-	objname = _objname;
-
-	file.elf = elf_open(objname, orc ? O_RDWR : O_RDONLY);
+	file.elf = elf;
 	if (!file.elf)
 		return 1;
 

@@ -17,13 +17,15 @@
 #include "check.h"
 
 
+static const char *const orc_subcmds = { "generate", "dump", NULL };
+
 static const char *orc_usage[] = {
 	"objtool orc generate [<options>] file.o",
 	"objtool orc dump file.o",
 	NULL,
 };
 
-int cmd_orc(int argc, const char **argv)
+static int orc(int argc, const char **argv, struct elf **elf)
 {
 	const char *objname;
 
@@ -54,3 +56,13 @@ int cmd_orc(int argc, const char **argv)
 
 	return 0;
 }
+
+const struct cmd_struct cmd_orc = {
+	.name = "orc",
+	.subcmds = orc_subcmds,
+	.short_description = "Generate in-place ORC unwind tables for an object file",
+	.options = cmd_check.options,
+	.usage = orc_usage,
+	.may_write = true,
+	.fn = orc,
+};

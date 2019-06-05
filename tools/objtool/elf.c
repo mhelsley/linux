@@ -622,6 +622,17 @@ int elf_rebuild_rela_section(struct section *sec)
 	return 0;
 }
 
+bool elf_changed(struct elf *elf)
+{
+	struct section *sec;
+
+	list_for_each_entry(sec, &elf->sections, list) {
+		if (sec->changed)
+			return true;
+	}
+	return false;
+}
+
 int elf_write(struct elf *elf)
 {
 	struct section *sec;

@@ -19,12 +19,51 @@
 
 bool no_fp, no_unreachable, retpoline, module, backtrace, uaccess;
 
+struct saved_check_opts {
+	bool no_fp, no_unreachable, retpoline, module, backtrace, uaccess;
+};
+
+static void *save_check_opts(void)
+{
+	struct saved_check_opts *o;
+
+	o = malloc(sizeof(o));
+	if (!o)
+		return NULL;
+	o->no_fp = no_fp;
+	o->no_unreachable = no_unreachable;
+	o->retpoline = retpoline;
+	o->module = module;
+	o->backtrace = backtrace;
+	o->uaccess = uaccess;
+
+	return o;
+}
+
+static void consume_check_opts(void *__o)
+{
+	struct saved_check_opts *o = __o;
+
+	if (!o)
+		return;
+	no_fp = o->no_fp;
+	no_unreachable = o->no_unreachable;
+	retpoline = o->retpoline;
+	module = o->module;
+	backtrace = o->backtrace;
+	uaccess = o->uaccess;
+
+	free(o);
+
+	return o;
+}
+
 static const char * const check_usage[] = {
 	"objtool check [<options>] file.o",
 	NULL,
 };
 
-const struct option check_options[] = {
+static const struct option check_options[] = {
 	OPT_BOOLEAN('f', "no-fp", &no_fp, "Skip frame pointer validation"),
 	OPT_BOOLEAN('u', "no-unreachable", &no_unreachable, "Skip 'unreachable instruction' warnings"),
 	OPT_BOOLEAN('r', "retpoline", &retpoline, "Validate retpoline assumptions"),
@@ -34,16 +73,19 @@ const struct option check_options[] = {
 	OPT_END(),
 };
 
-int cmd_check(int argc, const char **argv)
+static int wrap_check(void *saved_opts, struct elf **elf)
 {
-	const char *objname;
-
-	argc = parse_options(argc, argv, check_options, check_usage, 0);
-
-	if (argc != 1)
-		usage_with_options(check_usage, check_options);
-
-	objname = argv[0];
-
+	consume_check_opts(saved_opts);
 	return check(objname, false);
 }
+
+const struct cmd_struct cmd_check = {
+	.name = "check",
+	.subcmds = CMD_SUBCMDS_NONE,
+	.short_description = "Perform stack metadata validation on an object file",
+	.options = check_options,
+	.usage = check_usage,
+	.may_write = false,
+	.save_opts = save_check_opts,
+	.fn = wrap_check,
+};

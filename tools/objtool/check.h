@@ -52,6 +52,8 @@ struct objtool_file {
 	bool ignore_unreachables, c_file, hints, rodata;
 };
 
+extern bool no_fp, no_unreachable, retpoline, module, backtrace, uaccess;
+
 int check(const char *objname, bool orc);
 
 struct instruction *find_insn(struct objtool_file *file,

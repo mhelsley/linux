@@ -18,6 +18,6 @@
 #ifndef BUILTIN_SUBCMD_MCOUNT
 #define BUILTIN_SUBCMD_MCOUNT 1
 
-extern int record_mcount(int argc, const char **argv);
+extern const struct cmd_struct cmd_mcount;
 
 #endif /* BUILTIN_SUBCMD_MCOUNT */
