@@ -80,6 +80,7 @@ struct section *find_section_by_name(struct elf *elf, const char *name);
 struct section *find_section_by_index(struct elf *elf, unsigned int idx);
 struct symbol *find_symbol_by_offset(struct section *sec, unsigned long offset);
 struct symbol *find_symbol_by_name(struct elf *elf, const char *name);
+struct symbol *find_symbol_by_index(struct elf *elf, unsigned int idx);
 struct symbol *find_symbol_containing(struct section *sec, unsigned long offset);
 struct rela *find_rela_by_dest(struct section *sec, unsigned long offset);
 struct rela *find_rela_by_dest_range(struct section *sec, unsigned long offset,
