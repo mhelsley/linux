@@ -133,7 +133,7 @@ struct section *find_section_by_index(struct elf *elf, unsigned int idx)
 	return NULL;
 }
 
-static struct symbol *find_symbol_by_index(struct elf *elf, unsigned int idx)
+struct symbol *find_symbol_by_index(struct elf *elf, unsigned int idx)
 {
 	struct symbol *sym;
 
