@@ -29,21 +29,14 @@
 #undef has_rel_mcount
 #undef tot_relsize
 #undef get_mcountsym
-#undef get_relp
 #undef do_func
 #undef Elf_Addr
 #undef Elf_Ehdr
 #undef Elf_Shdr
 #undef Elf_Rel
 #undef Elf_Rela
-#undef Elf_Sym
-#undef ELF_R_SYM
-#undef Elf_r_sym
 #undef ELF_R_INFO
 #undef Elf_r_info
-#undef ELF_ST_BIND
-#undef ELF_ST_TYPE
-#undef fn_ELF_R_SYM
 #undef fn_ELF_R_INFO
 #undef uint_t
 #undef _w
@@ -58,7 +51,6 @@
 # define find_section_sym_index	find64_section_sym_index
 # define has_rel_mcount		has64_rel_mcount
 # define tot_relsize		tot64_relsize
-# define get_relp		get_relp_64
 # define do_func		do64
 # define get_mcountsym		get_mcountsym_64
 # define is_fake_mcount		is_fake_mcount64
@@ -70,14 +62,8 @@
 # define Elf_Shdr		Elf64_Shdr
 # define Elf_Rel		Elf64_Rel
 # define Elf_Rela		Elf64_Rela
-# define Elf_Sym		Elf64_Sym
-# define ELF_R_SYM		ELF64_R_SYM
-# define Elf_r_sym		Elf64_r_sym
 # define ELF_R_INFO		ELF64_R_INFO
 # define Elf_r_info		Elf64_r_info
-# define ELF_ST_BIND		ELF64_ST_BIND
-# define ELF_ST_TYPE		ELF64_ST_TYPE
-# define fn_ELF_R_SYM		fn_ELF64_R_SYM
 # define fn_ELF_R_INFO		fn_ELF64_R_INFO
 # define uint_t			uint64_t
 # define _w			w8
@@ -91,7 +77,6 @@
 # define find_section_sym_index	find32_section_sym_index
 # define has_rel_mcount		has32_rel_mcount
 # define tot_relsize		tot32_relsize
-# define get_relp		get_relp_32
 # define do_func		do32
 # define get_mcountsym		get_mcountsym_32
 # define is_fake_mcount		is_fake_mcount32
@@ -103,14 +88,8 @@
 # define Elf_Shdr		Elf32_Shdr
 # define Elf_Rel		Elf32_Rel
 # define Elf_Rela		Elf32_Rela
-# define Elf_Sym		Elf32_Sym
-# define ELF_R_SYM		ELF32_R_SYM
-# define Elf_r_sym		Elf32_r_sym
 # define ELF_R_INFO		ELF32_R_INFO
 # define Elf_r_info		Elf32_r_info
-# define ELF_ST_BIND		ELF32_ST_BIND
-# define ELF_ST_TYPE		ELF32_ST_TYPE
-# define fn_ELF_R_SYM		fn_ELF32_R_SYM
 # define fn_ELF_R_INFO		fn_ELF32_R_INFO
 # define uint_t			uint32_t
 # define _w			w
@@ -119,17 +98,11 @@
 #endif
 
 /* Functions and pointers that do_file() may override for specific e_machine. */
-static int fn_is_fake_mcount(Elf_Rel const *rp)
+static int fn_is_fake_mcount(struct rela const *rela)
 {
 	return 0;
 }
-static int (*is_fake_mcount)(Elf_Rel const *rp) = fn_is_fake_mcount;
-
-static uint_t fn_ELF_R_SYM(Elf_Rel const *rp)
-{
-	return ELF_R_SYM(_w(rp->r_info));
-}
-static uint_t (*Elf_r_sym)(Elf_Rel const *rp) = fn_ELF_R_SYM;
+static int (*is_fake_mcount)(struct rela const *rela) = fn_is_fake_mcount;
 
 static void fn_ELF_R_INFO(Elf_Rel *const rp, unsigned sym, unsigned type)
 {
@@ -160,10 +133,10 @@ static int mcount_adjust = 0;
  */
 #define MIPS_FAKEMCOUNT_OFFSET	4
 
-static int MIPS_is_fake_mcount(Elf_Rel const *rp)
+static int MIPS_is_fake_mcount(struct rela const *rela)
 {
 	static Elf_Addr old_r_offset = ~(Elf_Addr)0;
-	Elf_Addr current_r_offset = _w(rp->r_offset);
+	Elf_Addr current_r_offset = rela->offset;
 	int is_fake;
 
 	is_fake = (old_r_offset != ~(Elf_Addr)0) &&
@@ -264,9 +237,9 @@ static int append_func(Elf_Ehdr *const ehdr,
 	return elf_write(lf);
 }
 
-static unsigned get_mcountsym(Elf_Rel const *relp)
+static unsigned get_mcountsym(struct rela *rela)
 {
-	struct symbol *sym = find_symbol_by_index(lf, Elf_r_sym(relp));
+	struct symbol *sym = rela->sym;
 	char const *symname = sym->name;
 	char const *mcount = gpfx == '_' ? "_mcount" : "mcount";
 	char const *fentry = "__fentry__";
@@ -276,17 +249,8 @@ static unsigned get_mcountsym(Elf_Rel const *relp)
 	if (strcmp(mcount, symname) == 0 ||
 	    (altmcount && strcmp(altmcount, symname) == 0) ||
 	    (strcmp(fentry, symname) == 0))
-		return Elf_r_sym(relp);
+		return GELF_R_INFO(rela->sym->idx, rela->type);
 	return 0;
-}
-
-static void get_relp(const struct section * const rels,
-			Elf_Ehdr const *const ehdr,
-			Elf_Rel const **relp)
-{
-	Elf_Rel const *const rel0 = (Elf_Rel const *)(rels->sh.sh_offset
-		+ (void *)ehdr);
-	*relp = rel0;
 }
 
 /*
@@ -298,29 +262,23 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 			       unsigned const offbase,
 			       Elf_Rel **const mrelpp,
 			       const struct section * const rels,
-			       Elf_Ehdr const *const ehdr,
 			       unsigned const recsym_index,
 			       uint_t const recval,
 			       unsigned const reltype)
 {
 	uint_t *const mloc0 = mlocp;
 	Elf_Rel *mrelp = *mrelpp;
-	Elf_Rel const *relp;
 	unsigned int rel_entsize = rels->sh.sh_entsize;
-	unsigned const nrel = rels->sh.sh_size / rel_entsize;
 	unsigned mcountsym = 0;
-	unsigned t;
+	struct rela *rela;
 
-	get_relp(rels, ehdr, &relp);
-
-	for (t = nrel; t; --t) {
+	list_for_each_entry(rela, &rels->rela_list, list) {
 		if (!mcountsym)
-			mcountsym = get_mcountsym(relp);
+			mcountsym = get_mcountsym(rela);
 
-		if (mcountsym && mcountsym == Elf_r_sym(relp) &&
-				!is_fake_mcount(relp)) {
+		if (mcountsym == GELF_R_INFO(rela->sym->idx, rela->type) && !is_fake_mcount(rela)) {
 			uint_t const addend =
-				_w(_w(relp->r_offset) - recval + mcount_adjust);
+				_w(rela->offset - recval + mcount_adjust);
 			mrelp->r_offset = _w(offbase
 				+ ((void *)mlocp - (void *)mloc0));
 			Elf_r_info(mrelp, recsym_index, reltype);
@@ -332,7 +290,6 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 
 			mrelp = (Elf_Rel *)(rel_entsize + (void *)mrelp);
 		}
-		relp = (Elf_Rel const *)(rel_entsize + (void *)relp);
 	}
 	*mrelpp = mrelp;
 	return mlocp;
@@ -343,31 +300,26 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
  * that are not going to be traced. The mcount calls here will be converted
  * into nops.
  */
-static int nop_mcount(const struct section * const rels,
+static int nop_mcount(struct section * const rels,
 		      Elf_Ehdr const *const ehdr,
 		      const char *const txtname)
 {
 	Elf_Shdr *const shdr0 = (Elf_Shdr *)(_w(ehdr->e_shoff)
 		+ (void *)ehdr);
-	Elf_Rel const *relp;
+	struct rela *rela;
 	Elf_Shdr const *const shdr = &shdr0[rels->sh.sh_info];
-	unsigned rel_entsize = rels->sh.sh_entsize;
-	unsigned const nrel = rels->sh.sh_size / rel_entsize;
 	unsigned mcountsym = 0;
-	unsigned t;
 	int once = 0;
 
-	get_relp(rels, ehdr, &relp);
-
-	for (t = nrel; t; --t) {
+	list_for_each_entry(rela, &rels->rela_list, list) {
 		int ret = -1;
 
 		if (!mcountsym)
-			mcountsym = get_mcountsym(relp);
+			mcountsym = get_mcountsym(rela);
 
-		if (mcountsym == Elf_r_sym(relp) && !is_fake_mcount(relp)) {
+		if (mcountsym == GELF_R_INFO(rela->sym->idx, rela->type) && !is_fake_mcount(rela)) {
 			if (make_nop) {
-				ret = make_nop((void *)ehdr, _w(shdr->sh_offset) + _w(relp->r_offset));
+				ret = make_nop((void *)ehdr, _w(shdr->sh_offset) + rela->offset);
 				if (ret < 0)
 					return -1;
 			}
@@ -386,15 +338,9 @@ static int nop_mcount(const struct section * const rels,
 		 * as a nop (don't do anything with it).
 		 */
 		if (!ret) {
-			Elf_Rel rel;
-			rel = *(Elf_Rel *)relp;
-			Elf_r_info(&rel, Elf_r_sym(relp), rel_type_nop);
-			if (ulseek((void *)relp - (void *)ehdr, SEEK_SET) < 0)
-				return -1;
-			if (uwrite(&rel, sizeof(rel)) < 0)
-				return -1;
+			rela->type = rel_type_nop;
+			rels->changed = true;
 		}
-		relp = (Elf_Rel const *)(rel_entsize + (void *)relp);
 	}
 	return 0;
 }
@@ -489,7 +435,7 @@ static int do_func(Elf_Ehdr *const ehdr
 	unsigned rel_entsize = 0;
 	unsigned symsec_sh_link = 0;
 
-	const struct section *sec;
+	struct section *sec;
 
 	int result = 0;
 
@@ -532,7 +478,7 @@ static int do_func(Elf_Ehdr *const ehdr
 			rel_entsize = sec->sh.sh_entsize;
 			mlocp = sift_rel_mcount(mlocp,
 				(void *)mlocp - (void *)mloc0, &mrelp,
-				sec, ehdr, recsym_index, recval, reltype);
+				sec, recsym_index, recval, reltype);
 		} else if (txtname && (warn_on_notrace_sect || make_nop)) {
 			/*
 			 * This section is ignored by ftrace, but still
