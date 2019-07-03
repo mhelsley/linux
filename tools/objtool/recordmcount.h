@@ -29,7 +29,6 @@
 #undef has_rel_mcount
 #undef tot_relsize
 #undef do_func
-#undef Elf_Addr
 #undef Elf_Ehdr
 #undef Elf_Shdr
 #undef Elf_Rel
@@ -55,7 +54,6 @@
 # define fn_is_fake_mcount	fn_is_fake_mcount64
 # define MIPS_is_fake_mcount	MIPS64_is_fake_mcount
 # define mcount_adjust		mcount_adjust_64
-# define Elf_Addr		Elf64_Addr
 # define Elf_Ehdr		Elf64_Ehdr
 # define Elf_Shdr		Elf64_Shdr
 # define Elf_Rel		Elf64_Rel
@@ -80,7 +78,6 @@
 # define fn_is_fake_mcount	fn_is_fake_mcount32
 # define MIPS_is_fake_mcount	MIPS32_is_fake_mcount
 # define mcount_adjust		mcount_adjust_32
-# define Elf_Addr		Elf32_Addr
 # define Elf_Ehdr		Elf32_Ehdr
 # define Elf_Shdr		Elf32_Shdr
 # define Elf_Rel		Elf32_Rel
@@ -132,11 +129,11 @@ static int mcount_adjust = 0;
 
 static int MIPS_is_fake_mcount(struct rela const *rela)
 {
-	static Elf_Addr old_r_offset = ~(Elf_Addr)0;
-	Elf_Addr current_r_offset = rela->offset;
+	static unsigned long old_r_offset = ~0UL;
+	unsigned long current_r_offset = rela->offset;
 	int is_fake;
 
-	is_fake = (old_r_offset != ~(Elf_Addr)0) &&
+	is_fake = (old_r_offset != ~0UL) &&
 		(current_r_offset - old_r_offset == MIPS_FAKEMCOUNT_OFFSET);
 	old_r_offset = current_r_offset;
 
