@@ -444,11 +444,6 @@ union mips_r_info {
 	} r_mips;
 };
 
-static uint64_t MIPS64_r_sym(Elf64_Rel const *rp)
-{
-	return w(((union mips_r_info){ .r_info = rp->r_info }).r_mips.r_sym);
-}
-
 static void MIPS64_r_info(Elf64_Rel *const rp, unsigned sym, unsigned type)
 {
 	rp->r_info = ((union mips_r_info){
@@ -586,7 +581,6 @@ static int do_file(char const *const fname)
 		}
 		if (w2(ghdr->e_machine) == EM_MIPS) {
 			reltype = R_MIPS_64;
-			Elf64_r_sym = MIPS64_r_sym;
 			Elf64_r_info = MIPS64_r_info;
 			is_fake_mcount64 = MIPS64_is_fake_mcount;
 		}
