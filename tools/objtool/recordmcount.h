@@ -28,7 +28,6 @@
 #undef find_section_sym_index
 #undef has_rel_mcount
 #undef tot_relsize
-#undef get_mcountsym
 #undef do_func
 #undef Elf_Addr
 #undef Elf_Ehdr
@@ -52,7 +51,6 @@
 # define has_rel_mcount		has64_rel_mcount
 # define tot_relsize		tot64_relsize
 # define do_func		do64
-# define get_mcountsym		get_mcountsym_64
 # define is_fake_mcount		is_fake_mcount64
 # define fn_is_fake_mcount	fn_is_fake_mcount64
 # define MIPS_is_fake_mcount	MIPS64_is_fake_mcount
@@ -78,7 +76,6 @@
 # define has_rel_mcount		has32_rel_mcount
 # define tot_relsize		tot32_relsize
 # define do_func		do32
-# define get_mcountsym		get_mcountsym_32
 # define is_fake_mcount		is_fake_mcount32
 # define fn_is_fake_mcount	fn_is_fake_mcount32
 # define MIPS_is_fake_mcount	MIPS32_is_fake_mcount
@@ -235,22 +232,6 @@ static int append_func(Elf_Ehdr *const ehdr,
 	if (uwrite(ehdr, sizeof(*ehdr)) < 0)
 		return -1;
 	return elf_write(lf);
-}
-
-static unsigned get_mcountsym(struct rela *rela)
-{
-	struct symbol *sym = rela->sym;
-	char const *symname = sym->name;
-	char const *mcount = gpfx == '_' ? "_mcount" : "mcount";
-	char const *fentry = "__fentry__";
-
-	if (symname[0] == '.')
-		++symname;  /* ppc64 hack */
-	if (strcmp(mcount, symname) == 0 ||
-	    (altmcount && strcmp(altmcount, symname) == 0) ||
-	    (strcmp(fentry, symname) == 0))
-		return GELF_R_INFO(rela->sym->idx, rela->type);
-	return 0;
 }
 
 /*

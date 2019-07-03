@@ -418,6 +418,22 @@ static int is_mcounted_section_name(char const *const txtname)
 		strcmp(".cpuidle.text", txtname) == 0;
 }
 
+static unsigned get_mcountsym(struct rela *rela)
+{
+	struct symbol *sym = rela->sym;
+	char const *symname = sym->name;
+	char const *mcount = gpfx == '_' ? "_mcount" : "mcount";
+	char const *fentry = "__fentry__";
+
+	if (symname[0] == '.')
+		++symname;  /* ppc64 hack */
+	if (strcmp(mcount, symname) == 0 ||
+	    (altmcount && strcmp(altmcount, symname) == 0) ||
+	    (strcmp(fentry, symname) == 0))
+		return GELF_R_INFO(rela->sym->idx, rela->type);
+	return 0;
+}
+
 /* 32 bit and 64 bit are very similar */
 #include "recordmcount.h"
 #define RECORD_MCOUNT_64
