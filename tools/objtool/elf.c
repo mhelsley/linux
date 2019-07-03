@@ -354,12 +354,13 @@ static int read_relas(struct elf *elf)
 	unsigned int symndx;
 
 	list_for_each_entry(sec, &elf->sections, list) {
-		if (sec->sh.sh_type != SHT_RELA)
+		if ((sec->sh.sh_type != SHT_RELA) &&
+		     (sec->sh.sh_type != SHT_REL))
 			continue;
 
 		sec->base = find_section_by_name(elf, sec->name + 5);
 		if (!sec->base) {
-			WARN("can't find base section for rela section %s",
+			WARN("can't find base section for relocation section %s",
 			     sec->name);
 			return -1;
 		}
@@ -374,13 +375,26 @@ static int read_relas(struct elf *elf)
 			}
 			memset(rela, 0, sizeof(*rela));
 
-			if (!gelf_getrela(sec->data, i, &rela->rela)) {
-				WARN_ELF("gelf_getrela");
-				return -1;
+			switch(sec->sh.sh_type) {
+			case SHT_REL:
+				if (!gelf_getrel(sec->data, i, &rela->rel)) {
+					WARN_ELF("gelf_getrel");
+					return -1;
+				}
+				rela->addend = 0;
+				break;
+			case SHT_RELA:
+				if (!gelf_getrela(sec->data, i, &rela->rela)) {
+					WARN_ELF("gelf_getrela");
+					return -1;
+				}
+				rela->addend = rela->rela.r_addend;
+				break;
+			default:
+				break;
 			}
 
 			rela->type = GELF_R_TYPE(rela->rela.r_info);
-			rela->addend = rela->rela.r_addend;
 			rela->offset = rela->rela.r_offset;
 			symndx = GELF_R_SYM(rela->rela.r_info);
 			rela->sym = find_symbol_by_index(elf, symndx);
@@ -593,16 +607,26 @@ int elf_rebuild_rela_section(struct section *sec)
 	struct rela *rela;
 	int nr, idx = 0, size;
 	GElf_Rela *relas;
+	GElf_Rel *rels;
 
 	nr = 0;
 	list_for_each_entry(rela, &sec->rela_list, list)
 		nr++;
 
+	/*
+	 * Allocate a buffer for relocations with addends but also use
+	 * it for other relocations too. The section type determines
+	 * the size of the section, the buffer used, and the entries.
+	 */
 	size = nr * sizeof(*relas);
 	relas = malloc(size);
 	if (!relas) {
 		perror("malloc");
 		return -1;
+	}
+	rels = (void *)relas;
+	if (sec->sh.sh_type == SHT_REL) {
+		size = nr * sizeof(*rels);
 	}
 
 	sec->data->d_buf = relas;
@@ -612,9 +636,19 @@ int elf_rebuild_rela_section(struct section *sec)
 
 	idx = 0;
 	list_for_each_entry(rela, &sec->rela_list, list) {
-		relas[idx].r_offset = rela->offset;
-		relas[idx].r_addend = rela->addend;
-		relas[idx].r_info = GELF_R_INFO(rela->sym->idx, rela->type);
+		switch(sec->sh.sh_type) {
+		case SHT_REL:
+			rels[idx].r_offset = rela->offset;
+			rels[idx].r_info = GELF_R_INFO(rela->sym->idx, rela->type);
+			break;
+		case SHT_RELA:
+			relas[idx].r_addend = rela->addend;
+			relas[idx].r_offset = rela->offset;
+			relas[idx].r_info = GELF_R_INFO(rela->sym->idx, rela->type);
+			break;
+		default:
+			break;
+		}
 		idx++;
 	}
 
