@@ -191,7 +191,7 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 			       Elf_Rel **const mrelpp,
 			       const struct section * const rels,
 			       unsigned const recsym_index,
-			       uint_t const recval,
+			       unsigned long const recval,
 			       unsigned const reltype)
 {
 	uint_t *const mloc0 = mlocp;
@@ -288,8 +288,7 @@ static const unsigned int missing_sym = (unsigned int)-1;
  */
 static unsigned int find_section_sym_index(unsigned const txtndx,
 				char const *const txtname,
-				uint_t *const recvalp,
-				Elf_Ehdr const *const ehdr)
+				unsigned long *const recvalp)
 {
 	struct symbol *sym;
 	struct section *txts = find_section_by_index(lf, txtndx);
@@ -303,7 +302,7 @@ static unsigned int find_section_sym_index(unsigned const txtndx,
 	list_for_each_entry(sym, &txts->symbol_list, list) {
 		if ((sym->bind == STB_LOCAL) || (sym->bind == STB_GLOBAL)) {
 			/* function symbols on ARM have quirks, avoid them */
-			if (w2(ehdr->e_machine) == EM_ARM
+			if (lf->ehdr.e_machine == EM_ARM
 			    && sym->type == STT_FUNC)
 				continue;
 
@@ -391,13 +390,12 @@ static int do_func(Elf_Ehdr *const ehdr
 
 		txtname = has_rel_mcount(sec);
 		if (txtname && is_mcounted_section_name(txtname)) {
-			uint_t recval = 0;
+			unsigned long recval = 0;
 			unsigned int recsym_index;
 
 			symsec_sh_link = sec->sh.sh_link;
 			recsym_index = find_section_sym_index(
-				sec->sh.sh_info, txtname, &recval,
-				ehdr);
+				sec->sh.sh_info, txtname, &recval);
 			if (recsym_index == missing_sym) {
 				result = -1;
 				goto out;
