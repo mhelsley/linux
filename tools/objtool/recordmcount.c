@@ -429,9 +429,9 @@ static const unsigned int missing_sym = (unsigned int)-1;
 #define RECORD_MCOUNT_64
 #include "recordmcount.h"
 
-static int arm_is_fake_mcount(Elf32_Rel const *rp)
+static int arm_is_fake_mcount(struct rela const *rp)
 {
-	switch (ELF32_R_TYPE(w(rp->r_info))) {
+	switch (rp->type) {
 	case R_ARM_THM_CALL:
 	case R_ARM_CALL:
 	case R_ARM_PC24:
@@ -461,11 +461,6 @@ union mips_r_info {
 		myElf64_Byte r_type;		/* First relocation.  */
 	} r_mips;
 };
-
-static uint64_t MIPS64_r_sym(Elf64_Rel const *rp)
-{
-	return w(((union mips_r_info){ .r_info = rp->r_info }).r_mips.r_sym);
-}
 
 static void MIPS64_r_info(Elf64_Rel *const rp, unsigned sym, unsigned type)
 {
@@ -605,7 +600,6 @@ static int do_file(char const *const fname)
 		}
 		if (w2(ghdr->e_machine) == EM_MIPS) {
 			reltype = R_MIPS_64;
-			Elf64_r_sym = MIPS64_r_sym;
 			Elf64_r_info = MIPS64_r_info;
 			is_fake_mcount64 = MIPS64_is_fake_mcount;
 		}
