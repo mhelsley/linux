@@ -18,9 +18,6 @@
  * Copyright 2010 Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.
  */
 #undef append_func
-#undef is_fake_mcount
-#undef fn_is_fake_mcount
-#undef MIPS_is_fake_mcount
 #undef mcount_adjust
 #undef sift_rel_mcount
 #undef nop_mcount
@@ -50,9 +47,6 @@
 # define has_rel_mcount		has64_rel_mcount
 # define tot_relsize		tot64_relsize
 # define do_func		do64
-# define is_fake_mcount		is_fake_mcount64
-# define fn_is_fake_mcount	fn_is_fake_mcount64
-# define MIPS_is_fake_mcount	MIPS64_is_fake_mcount
 # define mcount_adjust		mcount_adjust_64
 # define Elf_Ehdr		Elf64_Ehdr
 # define Elf_Shdr		Elf64_Shdr
@@ -74,9 +68,6 @@
 # define has_rel_mcount		has32_rel_mcount
 # define tot_relsize		tot32_relsize
 # define do_func		do32
-# define is_fake_mcount		is_fake_mcount32
-# define fn_is_fake_mcount	fn_is_fake_mcount32
-# define MIPS_is_fake_mcount	MIPS32_is_fake_mcount
 # define mcount_adjust		mcount_adjust_32
 # define Elf_Ehdr		Elf32_Ehdr
 # define Elf_Shdr		Elf32_Shdr
@@ -91,13 +82,6 @@
 # define _size			4
 #endif
 
-/* Functions and pointers that do_file() may override for specific e_machine. */
-static int fn_is_fake_mcount(struct rela const *rela)
-{
-	return 0;
-}
-static int (*is_fake_mcount)(struct rela const *rela) = fn_is_fake_mcount;
-
 static void fn_ELF_R_INFO(Elf_Rel *const rp, unsigned sym, unsigned type)
 {
 	rp->r_info = _w(ELF_R_INFO(sym, type));
@@ -105,40 +89,6 @@ static void fn_ELF_R_INFO(Elf_Rel *const rp, unsigned sym, unsigned type)
 static void (*Elf_r_info)(Elf_Rel *const rp, unsigned sym, unsigned type) = fn_ELF_R_INFO;
 
 static int mcount_adjust = 0;
-
-/*
- * MIPS mcount long call has 2 _mcount symbols, only the position of the 1st
- * _mcount symbol is needed for dynamic function tracer, with it, to disable
- * tracing(ftrace_make_nop), the instruction in the position is replaced with
- * the "b label" instruction, to enable tracing(ftrace_make_call), replace the
- * instruction back. So, here, we set the 2nd one as fake and filter it.
- *
- * c:	3c030000	lui	v1,0x0		<-->	b	label
- *		c: R_MIPS_HI16	_mcount
- *		c: R_MIPS_NONE	*ABS*
- *		c: R_MIPS_NONE	*ABS*
- * 10:	64630000	daddiu	v1,v1,0
- *		10: R_MIPS_LO16	_mcount
- *		10: R_MIPS_NONE	*ABS*
- *		10: R_MIPS_NONE	*ABS*
- * 14:	03e0082d	move	at,ra
- * 18:	0060f809	jalr	v1
- * label:
- */
-#define MIPS_FAKEMCOUNT_OFFSET	4
-
-static int MIPS_is_fake_mcount(struct rela const *rela)
-{
-	static unsigned long old_r_offset = ~0UL;
-	unsigned long current_r_offset = rela->offset;
-	int is_fake;
-
-	is_fake = (old_r_offset != ~0UL) &&
-		(current_r_offset - old_r_offset == MIPS_FAKEMCOUNT_OFFSET);
-	old_r_offset = current_r_offset;
-
-	return is_fake;
-}
 
 /* Append the new shstrtab, Elf_Shdr[], __mcount_loc and its relocations. */
 static int append_func(Elf_Ehdr *const ehdr,

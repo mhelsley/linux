@@ -434,6 +434,48 @@ static unsigned get_mcountsym(struct rela *rela)
 	return 0;
 }
 
+/*
+ * MIPS mcount long call has 2 _mcount symbols, only the position of the 1st
+ * _mcount symbol is needed for dynamic function tracer, with it, to disable
+ * tracing(ftrace_make_nop), the instruction in the position is replaced with
+ * the "b label" instruction, to enable tracing(ftrace_make_call), replace the
+ * instruction back. So, here, we set the 2nd one as fake and filter it.
+ *
+ * c:	3c030000	lui	v1,0x0		<-->	b	label
+ *		c: R_MIPS_HI16	_mcount
+ *		c: R_MIPS_NONE	*ABS*
+ *		c: R_MIPS_NONE	*ABS*
+ * 10:	64630000	daddiu	v1,v1,0
+ *		10: R_MIPS_LO16	_mcount
+ *		10: R_MIPS_NONE	*ABS*
+ *		10: R_MIPS_NONE	*ABS*
+ * 14:	03e0082d	move	at,ra
+ * 18:	0060f809	jalr	v1
+ * label:
+ */
+#define MIPS_FAKEMCOUNT_OFFSET	4
+
+static int MIPS_is_fake_mcount(struct rela const *rela)
+{
+	unsigned long old_r_offset = ~0UL;
+	unsigned long current_r_offset = rela->offset;
+	int is_fake;
+
+	is_fake = (old_r_offset != ~0UL) &&
+		(current_r_offset - old_r_offset == MIPS_FAKEMCOUNT_OFFSET);
+	old_r_offset = current_r_offset;
+
+	return is_fake;
+}
+
+/* Functions and pointers that do_file() may override for specific e_machine. */
+static int fn_is_fake_mcount(struct rela const *rela)
+{
+	return 0;
+}
+
+static int (*is_fake_mcount)(struct rela const *rela) = fn_is_fake_mcount;
+
 /* 32 bit and 64 bit are very similar */
 #include "recordmcount.h"
 #define RECORD_MCOUNT_64
@@ -578,7 +620,7 @@ static int do_file(char const *const fname)
 		}
 		if (w2(ehdr->e_machine) == EM_MIPS) {
 			reltype = R_MIPS_32;
-			is_fake_mcount32 = MIPS32_is_fake_mcount;
+			is_fake_mcount = MIPS_is_fake_mcount;
 		}
 		if (do32(ehdr, reltype) < 0)
 			goto out;
@@ -598,7 +640,7 @@ static int do_file(char const *const fname)
 		if (w2(ghdr->e_machine) == EM_MIPS) {
 			reltype = R_MIPS_64;
 			Elf64_r_info = MIPS64_r_info;
-			is_fake_mcount64 = MIPS64_is_fake_mcount;
+			is_fake_mcount = MIPS_is_fake_mcount;
 		}
 		if (do64(ghdr, reltype) < 0)
 			goto out;
