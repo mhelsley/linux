@@ -188,7 +188,7 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 			       Elf_Rel **const mrelpp,
 			       const struct section * const rels,
 			       unsigned const recsym_index,
-			       uint_t const recval,
+			       unsigned long const recval,
 			       unsigned const reltype)
 {
 	uint_t *const mloc0 = mlocp;
@@ -282,9 +282,8 @@ static int nop_mcount(struct section * const rels,
  */
 static int find_section_sym_index(unsigned const txtndx,
 				char const *const txtname,
-				uint_t *const recvalp,
-				unsigned int *sym_index,
-				Elf_Ehdr const *const ehdr)
+				unsigned long *const recvalp,
+				unsigned int *sym_index)
 {
 	struct symbol *sym;
 	struct section *txts = find_section_by_index(lf, txtndx);
@@ -298,7 +297,7 @@ static int find_section_sym_index(unsigned const txtndx,
 	list_for_each_entry(sym, &txts->symbol_list, list) {
 		if ((sym->bind == STB_LOCAL) || (sym->bind == STB_GLOBAL)) {
 			/* function symbols on ARM have quirks, avoid them */
-			if (w2(ehdr->e_machine) == EM_ARM
+			if (lf->ehdr.e_machine == EM_ARM
 			    && sym->type == STT_FUNC)
 				continue;
 
@@ -387,12 +386,12 @@ static int do_func(Elf_Ehdr *const ehdr
 
 		txtname = has_rel_mcount(sec);
 		if (txtname && is_mcounted_section_name(txtname)) {
+			unsigned long recval = 0;
 			unsigned int recsym;
-			uint_t recval = 0;
 
 			symsec_sh_link = sec->sh.sh_link;
 			result = find_section_sym_index(sec->sh.sh_info,
-						txtname, &recval, &recsym, ehdr);
+						txtname, &recval, &recsym);
 			if (result)
 				goto out;
 
