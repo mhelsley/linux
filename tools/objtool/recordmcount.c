@@ -48,23 +48,8 @@ static struct stat sb;	/* Remember .st_size, etc. */
 static const char *altmcount;	/* alternate mcount symbol name */
 static int warn_on_notrace_sect; /* warn when section has mcount not being recorded */
 static void *file_map;	/* pointer of the mapped file */
-static void *file_end;	/* pointer to the end of the mapped file */
-static int file_updated; /* flag to state file was changed */
-static void *file_ptr;	/* current file pointer location */
-
-static void *file_append; /* added to the end of the file */
-static size_t file_append_size; /* how much is added to end of file */
 
 static struct elf *lf;
-
-/* Per-file resource cleanup when multiple files. */
-static void file_append_cleanup(void)
-{
-	free(file_append);
-	file_append = NULL;
-	file_append_size = 0;
-	file_updated = 0;
-}
 
 static void mmap_cleanup(void)
 {
@@ -78,72 +63,11 @@ static void mmap_cleanup(void)
 	lf = NULL;
 }
 
-/* ulseek, uwrite, ...:  Check return value for errors. */
-
-static off_t ulseek(off_t const offset, int const whence)
-{
-	switch (whence) {
-	case SEEK_SET:
-		file_ptr = file_map + offset;
-		break;
-	case SEEK_CUR:
-		file_ptr += offset;
-		break;
-	case SEEK_END:
-		file_ptr = file_map + (sb.st_size - offset);
-		break;
-	}
-	if (file_ptr < file_map) {
-		fprintf(stderr, "lseek: seek before file\n");
-		return -1;
-	}
-	return file_ptr - file_map;
-}
-
-static ssize_t uwrite(void const *const buf, size_t const count)
-{
-	size_t cnt = count;
-	off_t idx = 0;
-
-	file_updated = 1;
-
-	if (file_ptr + count >= file_end) {
-		off_t aoffset = (file_ptr + count) - file_end;
-
-		if (aoffset > file_append_size) {
-			file_append = realloc(file_append, aoffset);
-			file_append_size = aoffset;
-		}
-		if (!file_append) {
-			perror("write");
-			file_append_cleanup();
-			mmap_cleanup();
-			return -1;
-		}
-		if (file_ptr < file_end) {
-			cnt = file_end - file_ptr;
-		} else {
-			cnt = 0;
-			idx = aoffset - count;
-		}
-	}
-
-	if (cnt)
-		memcpy(file_ptr, buf, cnt);
-
-	if (cnt < count)
-		memcpy(file_append + idx, buf + cnt, count - cnt);
-
-	file_ptr += count;
-	return count;
-}
-
 static void * umalloc(size_t size)
 {
 	void *const addr = malloc(size);
 	if (addr == 0) {
 		fprintf(stderr, "malloc failed: %zu bytes\n", size);
-		file_append_cleanup();
 		mmap_cleanup();
 		return NULL;
 	}
@@ -169,8 +93,6 @@ static void *mmap_file(char const *fname)
 	fd_map = -1;
 	mmap_failed = 1;
 	file_map = NULL;
-	file_ptr = NULL;
-	file_updated = 0;
 	sb.st_size = 0;
 
 	lf = elf_read(fname, O_RDWR);
@@ -206,8 +128,6 @@ static void *mmap_file(char const *fname)
 out:
 	fd_map = -1;
 
-	file_end = file_map + sb.st_size;
-
 	return file_map;
 }
 
@@ -218,12 +138,16 @@ static unsigned char *ideal_nop;
 
 static char rel_type_nop;
 
-static int (*make_nop)(void *map, size_t const offset);
+static int (*make_nop)(struct section *, size_t const offset);
 
-static int make_nop_x86(void *map, size_t const offset)
+static int make_nop_x86(struct section *txts, size_t const offset)
 {
 	uint32_t *ptr;
 	unsigned char *op;
+	void *map = txts->data->d_buf;
+
+	if (offset < 1)
+		return -1;
 
 	/* Confirm we have 0xe8 0x0 0x0 0x0 0x0 */
 	ptr = map + offset;
@@ -235,10 +159,7 @@ static int make_nop_x86(void *map, size_t const offset)
 		return -1;
 
 	/* convert to nop */
-	if (ulseek(offset - 1, SEEK_SET) < 0)
-		return -1;
-	if (uwrite(ideal_nop, 5) < 0)
-		return -1;
+	memcpy(op, ideal_nop, 5);
 	return 0;
 }
 
@@ -262,12 +183,13 @@ static unsigned char push_bl_mcount_thumb_le[6] = { 0x00, 0xb5, 0xff, 0xf7, 0xfe
 static unsigned char push_bl_mcount_thumb_be[6] = { 0xb5, 0x00, 0xf7, 0xff, 0xff, 0xfe }; /* push {lr}, bl */
 static unsigned char *push_bl_mcount_thumb;
 
-static int make_nop_arm(void *map, size_t const offset)
+static int make_nop_arm(struct section *txts, size_t const offset)
 {
 	char *ptr;
 	int cnt = 1;
 	int nop_size;
 	size_t off = offset;
+	void *map = txts->data->d_buf;
 
 	ptr = map + offset;
 	if (memcmp(ptr, bl_mcount_arm, 4) == 0) {
@@ -286,21 +208,19 @@ static int make_nop_arm(void *map, size_t const offset)
 		return -1;
 
 	/* Convert to nop */
-	if (ulseek(off, SEEK_SET) < 0)
-		return -1;
-
 	do {
-		if (uwrite(ideal_nop, nop_size) < 0)
-			return -1;
+		memcpy(map + off, ideal_nop, nop_size);
+		off += nop_size;
 	} while (--cnt > 0);
 
 	return 0;
 }
 
 static unsigned char ideal_nop4_arm64[4] = {0x1f, 0x20, 0x03, 0xd5};
-static int make_nop_arm64(void *map, size_t const offset)
+static int make_nop_arm64(struct section *txts, size_t const offset)
 {
 	uint32_t *ptr;
+	void *map = txts->data->d_buf;
 
 	ptr = map + offset;
 	/* bl <_mcount> is 0x94000000 before relocation */
@@ -308,52 +228,7 @@ static int make_nop_arm64(void *map, size_t const offset)
 		return -1;
 
 	/* Convert to nop */
-	if (ulseek(offset, SEEK_SET) < 0)
-		return -1;
-	if (uwrite(ideal_nop, 4) < 0)
-		return -1;
-	return 0;
-}
-
-static int write_file(const char *fname)
-{
-	char tmp_file[strlen(fname) + 4];
-	size_t n;
-
-	if (!file_updated)
-		return 0;
-
-	sprintf(tmp_file, "%s.rc", fname);
-
-	/*
-	 * After reading the entire file into memory, delete it
-	 * and write it back, to prevent weird side effects of modifying
-	 * an object file in place.
-	 */
-	fd_map = open(tmp_file, O_WRONLY | O_TRUNC | O_CREAT, sb.st_mode);
-	if (fd_map < 0) {
-		perror(fname);
-		return -1;
-	}
-	n = write(fd_map, file_map, sb.st_size);
-	if (n != sb.st_size) {
-		perror("write");
-		close(fd_map);
-		return -1;
-	}
-	if (file_append_size) {
-		n = write(fd_map, file_append, file_append_size);
-		if (n != file_append_size) {
-			perror("write");
-			close(fd_map);
-			return -1;
-		}
-	}
-	close(fd_map);
-	if (rename(tmp_file, fname) < 0) {
-		perror(fname);
-		return -1;
-	}
+	memcpy(map + offset, ideal_nop, 4);
 	return 0;
 }
 
@@ -664,7 +539,7 @@ static int do_file(char const *const fname)
 			reltype = R_MIPS_32;
 			is_fake_mcount = MIPS_is_fake_mcount;
 		}
-		if (do32(ehdr, reltype) < 0)
+		if (do32(reltype) < 0)
 			goto out;
 		break;
 	case ELFCLASS64: {
@@ -684,15 +559,13 @@ static int do_file(char const *const fname)
 			Elf64_r_info = MIPS64_r_info;
 			is_fake_mcount = MIPS_is_fake_mcount;
 		}
-		if (do64(ghdr, reltype) < 0)
+		if (do64(reltype) < 0)
 			goto out;
 		break;
 	}
 	}  /* end switch */
 
-	rc = write_file(fname);
 out:
-	file_append_cleanup();
 	mmap_cleanup();
 	return rc;
 }

@@ -24,7 +24,6 @@
 #undef has_rel_mcount
 #undef tot_relsize
 #undef do_func
-#undef Elf_Ehdr
 #undef Elf_Shdr
 #undef Elf_Rel
 #undef Elf_Rela
@@ -33,7 +32,6 @@
 #undef fn_ELF_R_INFO
 #undef uint_t
 #undef _w
-#undef _align
 #undef _size
 
 #ifdef RECORD_MCOUNT_64
@@ -44,8 +42,6 @@
 # define tot_relsize		tot64_relsize
 # define do_func		do64
 # define mcount_adjust		mcount_adjust_64
-# define Elf_Ehdr		Elf64_Ehdr
-# define Elf_Shdr		Elf64_Shdr
 # define Elf_Rel		Elf64_Rel
 # define Elf_Rela		Elf64_Rela
 # define ELF_R_INFO		ELF64_R_INFO
@@ -53,7 +49,6 @@
 # define fn_ELF_R_INFO		fn_ELF64_R_INFO
 # define uint_t			uint64_t
 # define _w			w8
-# define _align			7u
 # define _size			8
 #else
 # define append_func		append32
@@ -63,8 +58,6 @@
 # define tot_relsize		tot32_relsize
 # define do_func		do32
 # define mcount_adjust		mcount_adjust_32
-# define Elf_Ehdr		Elf32_Ehdr
-# define Elf_Shdr		Elf32_Shdr
 # define Elf_Rel		Elf32_Rel
 # define Elf_Rela		Elf32_Rela
 # define ELF_R_INFO		ELF32_R_INFO
@@ -72,7 +65,6 @@
 # define fn_ELF_R_INFO		fn_ELF32_R_INFO
 # define uint_t			uint32_t
 # define _w			w
-# define _align			3u
 # define _size			4
 #endif
 
@@ -84,10 +76,8 @@ static void (*Elf_r_info)(Elf_Rel *const rp, unsigned sym, unsigned type) = fn_E
 
 static int mcount_adjust = 0;
 
-/* Append the new shstrtab, Elf_Shdr[], __mcount_loc and its relocations. */
-static int append_func(Elf_Ehdr *const ehdr,
-			Elf_Shdr *const shstr,
-			uint_t const *const mloc0,
+/* Append the new  __mcount_loc and its relocations. */
+static int append_func(uint_t const *const mloc0,
 			uint_t const *const mlocp,
 			Elf_Rel const *const mrel0,
 			Elf_Rel const *const mrelp,
@@ -95,83 +85,47 @@ static int append_func(Elf_Ehdr *const ehdr,
 			unsigned int const symsec_sh_link)
 {
 	/* Begin constructing output file */
-	Elf_Shdr mcsec;
+	struct section *sec;
 	char const *mc_name = (sizeof(Elf_Rela) == rel_entsize)
 		? ".rela__mcount_loc"
 		:  ".rel__mcount_loc";
 	unsigned const old_shnum = lf->ehdr.e_shnum;
-	uint_t const old_shoff = lf->ehdr.e_shoff;
-	uint_t const old_shstr_sh_size   = _w(shstr->sh_size);
-	uint_t const old_shstr_sh_offset = _w(shstr->sh_offset);
-	uint_t t = 1 + strlen(mc_name) + _w(shstr->sh_size);
-	uint_t new_e_shoff;
 
-	shstr->sh_size = _w(t);
-	shstr->sh_offset = _w(sb.st_size);
-
-	t += sb.st_size;
-	t += (_align & -t);  /* word-byte align */
-	new_e_shoff = t;
-
-	/* body for new shstrtab */
-	if (ulseek(sb.st_size, SEEK_SET) < 0)
-		return -1;
-	if (uwrite(old_shstr_sh_offset + (void *)ehdr, old_shstr_sh_size) < 0)
-		return -1;
-	if (uwrite(mc_name, 1 + strlen(mc_name)) < 0)
+	/* add section: __mcount_loc */
+	sec = elf_create_section(lf, mc_name + (sizeof(Elf_Rela) == rel_entsize) + strlen(".rel"), _size, mlocp - mloc0);
+	if (!sec)
 		return -1;
 
-	/* old(modified) Elf_Shdr table, word-byte aligned */
-	if (ulseek(t, SEEK_SET) < 0)
-		return -1;
-	t += sizeof(Elf_Shdr) * old_shnum;
-	if (uwrite(old_shoff + (void *)ehdr,
-	       sizeof(Elf_Shdr) * old_shnum) < 0)
-		return -1;
+	// created sec->sh.sh_size = (void *)mlocp - (void *)mloc0;
+	sec->sh.sh_link = 0;/* TODO objtool uses this? */
+	sec->sh.sh_info = 0;/* TODO objtool uses this? */
+	sec->sh.sh_addralign = _size;
+	// created sec->sh.sh_entsize = _size;
 
-	/* new sections __mcount_loc and .rel__mcount_loc */
-	t += 2*sizeof(mcsec);
-	mcsec.sh_name = w((sizeof(Elf_Rela) == rel_entsize) + strlen(".rel")
-		+ old_shstr_sh_size);
-	mcsec.sh_type = w(SHT_PROGBITS);
-	mcsec.sh_flags = _w(SHF_ALLOC);
-	mcsec.sh_addr = 0;
-	mcsec.sh_offset = _w(t);
-	mcsec.sh_size = _w((void *)mlocp - (void *)mloc0);
-	mcsec.sh_link = 0;
-	mcsec.sh_info = 0;
-	mcsec.sh_addralign = _w(_size);
-	mcsec.sh_entsize = _w(_size);
-	if (uwrite(&mcsec, sizeof(mcsec)) < 0)
-		return -1;
+	// assert sec->data->d_size == (void *)mlocp - (void *)mloc0
+	memcpy(sec->data->d_buf, mloc0, sec->data->d_size);
+	/* HACK link in Pre-assembled buffer ?
+	sec->data->d_buf = mloc0;
+	sec->data->d_size = sec->sh.sh_size;*/
 
-	mcsec.sh_name = w(old_shstr_sh_size);
-	mcsec.sh_type = (sizeof(Elf_Rela) == rel_entsize)
-		? w(SHT_RELA)
-		: w(SHT_REL);
-	mcsec.sh_flags = 0;
-	mcsec.sh_addr = 0;
-	mcsec.sh_offset = _w((void *)mlocp - (void *)mloc0 + t);
-	mcsec.sh_size   = _w((void *)mrelp - (void *)mrel0);
-	mcsec.sh_link = w(symsec_sh_link);
-	mcsec.sh_info = w(old_shnum);
-	mcsec.sh_addralign = _w(_size);
-	mcsec.sh_entsize = _w(rel_entsize);
+	/* add section .rel[a]__mcount_loc */
+	sec = elf_create_section(lf, mc_name, rel_entsize, mrelp - mrel0);
+	if (!sec)
+		return -1;
+	sec->sh.sh_type = (sizeof(Elf_Rela) == rel_entsize)
+				? SHT_RELA
+				: SHT_REL;
+	sec->sh.sh_flags = 0;
+	sec->sh.sh_link = find_section_by_name(lf, ".symtab")->idx;
+	sec->sh.sh_info = old_shnum;
+	sec->sh.sh_addralign = _size;
 
-	if (uwrite(&mcsec, sizeof(mcsec)) < 0)
-		return -1;
+	// assert sec->data->d_size == (void *)mrelp - (void *)mrel0
+	memcpy(sec->data->d_buf, mrel0, sec->data->d_size);
+	/* HACK link in Pre-assembled buffer ?
+	sec->data->d_buf = mrel0;
+	sec->data->d_size = sec->sh.sh_size;*/
 
-	if (uwrite(mloc0, (void *)mlocp - (void *)mloc0) < 0)
-		return -1;
-	if (uwrite(mrel0, (void *)mrelp - (void *)mrel0) < 0)
-		return -1;
-
-	ehdr->e_shoff = _w(new_e_shoff);
-	ehdr->e_shnum = w2(2 + lf->ehdr.e_shnum);  /* {.rel,}__mcount_loc */
-	if (ulseek(0, SEEK_SET) < 0)
-		return -1;
-	if (uwrite(ehdr, sizeof(*ehdr)) < 0)
-		return -1;
 	return elf_write(lf);
 }
 
@@ -223,13 +177,10 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
  * into nops.
  */
 static int nop_mcount(struct section * const rels,
-		      Elf_Ehdr const *const ehdr,
 		      const char *const txtname)
 {
-	Elf_Shdr *const shdr0 = (Elf_Shdr *)(_w(ehdr->e_shoff)
-		+ (void *)ehdr);
 	struct rela *rela;
-	Elf_Shdr const *const shdr = &shdr0[rels->sh.sh_info];
+	struct section *txts = find_section_by_index(lf, rels->sh.sh_info);
 	unsigned mcountsym = 0;
 	int once = 0;
 
@@ -241,7 +192,7 @@ static int nop_mcount(struct section * const rels,
 
 		if (mcountsym == GELF_R_INFO(rela->sym->idx, rela->type) && !is_fake_mcount(rela)) {
 			if (make_nop) {
-				ret = make_nop((void *)ehdr, _w(shdr->sh_offset) + rela->offset);
+				ret = make_nop(txts, rela->offset);
 				if (ret < 0)
 					return -1;
 			}
@@ -296,12 +247,8 @@ static unsigned tot_relsize()
 
 
 /* Overall supervision for Elf32 ET_REL file. */
-static int do_func(Elf_Ehdr *const ehdr
-		   unsigned const reltype)
+static int do_func(unsigned const reltype)
 {
-	Elf_Shdr *const shdr0 = (Elf_Shdr *)(_w(ehdr->e_shoff)
-		+ (void *)ehdr);
-
 	/* Upper bound on space: assume all relevant relocs are for mcount. */
 	unsigned       totrelsz;
 
@@ -362,15 +309,14 @@ static int do_func(Elf_Ehdr *const ehdr
 			 * This section is ignored by ftrace, but still
 			 * has mcount calls. Convert them to nops now.
 			 */
-			if (nop_mcount(sec, ehdr, txtname) < 0) {
+			if (nop_mcount(sec, txtname) < 0) {
 				result = -1;
 				goto out;
 			}
 		}
 	}
 	if (!result && mloc0 != mlocp)
-		result = append_func(ehdr, &shdr0[w2(ehdr->e_shstrndx)],
-				     mloc0, mlocp, mrel0, mrelp,
+		result = append_func(mloc0, mlocp, mrel0, mrelp,
 				     rel_entsize, symsec_sh_link);
 out:
 	free(mrel0);
