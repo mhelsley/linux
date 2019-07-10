@@ -393,6 +393,53 @@ static unsigned int find_section_sym_index(unsigned const txtndx,
 	return missing_sym;
 }
 
+/*
+ * Read the relocation table again, but this time its called on sections
+ * that are not going to be traced. The mcount calls here will be converted
+ * into nops.
+ */
+static int nop_mcount(struct section * const rels,
+		      const char *const txtname)
+{
+	struct rela *rela;
+	struct section *txts = find_section_by_index(lf, rels->sh.sh_info);
+	unsigned mcountsym = 0;
+	int once = 0;
+
+	list_for_each_entry(rela, &rels->rela_list, list) {
+		int ret = -1;
+
+		if (!mcountsym)
+			mcountsym = get_mcountsym(rela);
+
+		if (mcountsym == GELF_R_INFO(rela->sym->idx, rela->type) && !is_fake_mcount(rela)) {
+			if (make_nop) {
+				ret = make_nop(txts, rela->offset);
+				if (ret < 0)
+					return -1;
+			}
+			if (warn_on_notrace_sect && !once) {
+				printf("Section %s has mcount callers being ignored\n",
+				       txtname);
+				once = 1;
+				/* just warn? */
+				if (!make_nop)
+					return 0;
+			}
+		}
+
+		/*
+		 * If we successfully removed the mcount, mark the relocation
+		 * as a nop (don't do anything with it).
+		 */
+		if (!ret) {
+			rela->type = rel_type_nop;
+			rels->changed = true;
+		}
+	}
+	return 0;
+}
+
 /* 32 bit and 64 bit are very similar */
 #include "recordmcount.h"
 #define RECORD_MCOUNT_64
