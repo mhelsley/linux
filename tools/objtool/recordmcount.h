@@ -20,8 +20,6 @@
 #undef append_func
 #undef mcount_adjust
 #undef sift_rel_mcount
-#undef has_rel_mcount
-#undef tot_relsize
 #undef do_func
 #undef Elf_Shdr
 #undef Elf_Rel
@@ -36,8 +34,6 @@
 #ifdef RECORD_MCOUNT_64
 # define append_func		append64
 # define sift_rel_mcount	sift64_rel_mcount
-# define has_rel_mcount		has64_rel_mcount
-# define tot_relsize		tot64_relsize
 # define do_func		do64
 # define mcount_adjust		mcount_adjust_64
 # define Elf_Rel		Elf64_Rel
@@ -51,8 +47,6 @@
 #else
 # define append_func		append32
 # define sift_rel_mcount	sift32_rel_mcount
-# define has_rel_mcount		has32_rel_mcount
-# define tot_relsize		tot32_relsize
 # define do_func		do32
 # define mcount_adjust		mcount_adjust_32
 # define Elf_Rel		Elf32_Rel
@@ -166,33 +160,6 @@ static uint_t *sift_rel_mcount(uint_t *mlocp,
 	}
 	*mrelpp = mrelp;
 	return mlocp;
-}
-
-static char const *has_rel_mcount(const struct section * const rels)
-{
-	const struct section *txts;
-	if (rels->sh.sh_type != SHT_REL && rels->sh.sh_type != SHT_RELA)
-		return NULL;
-	txts = find_section_by_index(lf, rels->sh.sh_info);
-	if ((txts->sh.sh_type != SHT_PROGBITS) ||
-	    !(txts->sh.sh_flags & SHF_EXECINSTR))
-		return NULL;
-	return txts->name;
-}
-
-
-static unsigned tot_relsize()
-{
-	const struct section *sec;
-	unsigned totrelsz = 0;
-	char const *txtname;
-
-	list_for_each_entry(sec, &lf->sections, list) {
-		txtname = has_rel_mcount(sec);
-		if (txtname && is_mcounted_section_name(txtname))
-			totrelsz += sec->sh.sh_size;
-	}
-	return totrelsz;
 }
 
 
