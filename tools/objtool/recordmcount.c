@@ -440,6 +440,32 @@ static int nop_mcount(struct section * const rels,
 	return 0;
 }
 
+static char const *has_rel_mcount(const struct section * const rels,
+				  char const *const fname)
+{
+	const struct section *txts;
+	if (rels->sh.sh_type != SHT_REL && rels->sh.sh_type != SHT_RELA)
+		return NULL;
+	txts = find_section_by_index(lf, rels->sh.sh_info);
+	if ((txts->sh.sh_type != SHT_PROGBITS) ||
+	    !(txts->sh.sh_flags & SHF_EXECINSTR))
+		return NULL;
+	return txts->name;
+}
+
+static unsigned tot_relsize(const char *const fname)
+{
+	const struct section *sec;
+	unsigned totrelsz = 0;
+	char const *txtname;
+
+	list_for_each_entry(sec, &lf->sections, list) {
+		txtname = has_rel_mcount(sec, fname);
+		if (txtname && is_mcounted_section_name(txtname))
+			totrelsz += sec->sh.sh_size;
+	}
+	return totrelsz;
+}
 /* 32 bit and 64 bit are very similar */
 #include "recordmcount.h"
 #define RECORD_MCOUNT_64
