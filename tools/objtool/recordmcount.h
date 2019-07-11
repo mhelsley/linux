@@ -188,13 +188,13 @@ static int do_func(unsigned const reltype)
 	totrelsz = tot_relsize(&rel_entsize);
 	if (totrelsz == 0)
 		return 0;
-	mrel0 = umalloc(totrelsz);
+	mrel0 = malloc(totrelsz);
 	mrelp = mrel0;
 	if (!mrel0)
 		return -1;
 
 	/* 2*sizeof(address) <= sizeof(Elf_Rel) */
-	mloc0 = umalloc(totrelsz>>1);
+	mloc0 = malloc(totrelsz>>1);
 	mlocp = mloc0;
 	if (!mloc0) {
 		free(mrel0);
