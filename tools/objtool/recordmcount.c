@@ -505,22 +505,22 @@ static void MIPS64_r_info(Elf64_Rel *const rp, unsigned sym, unsigned type)
 
 static int do_file(char const *const fname)
 {
-	Elf32_Ehdr *ehdr;
+	void *elf_mapping;
 	unsigned int reltype = 0;
 	int rc = -1;
 
-	ehdr = mmap_file(fname);
-	if (!ehdr)
+	elf_mapping = mmap_file(fname);
+	if (!elf_mapping)
 		goto out;
 
 	w = w4nat;
 	w2 = w2nat;
 	w8 = w8nat;
-	switch (ehdr->e_ident[EI_DATA]) {
+	switch (lf->ehdr.e_ident[EI_DATA]) {
 		static unsigned int const endian = 1;
 	default:
 		fprintf(stderr, "unrecognized ELF data encoding %d: %s\n",
-			ehdr->e_ident[EI_DATA], fname);
+			lf->ehdr.e_ident[EI_DATA], fname);
 		goto out;
 	case ELFDATA2LSB:
 		if (*(unsigned char const *)&endian != 1) {
@@ -549,18 +549,18 @@ static int do_file(char const *const fname)
 		push_bl_mcount_thumb = push_bl_mcount_thumb_be;
 		break;
 	}  /* end switch */
-	if (memcmp(ELFMAG, ehdr->e_ident, SELFMAG) != 0 ||
-	    w2(ehdr->e_type) != ET_REL ||
-	    ehdr->e_ident[EI_VERSION] != EV_CURRENT) {
+	if (memcmp(ELFMAG, lf->ehdr.e_ident, SELFMAG) != 0 ||
+	    lf->ehdr.e_type != ET_REL ||
+	    lf->ehdr.e_ident[EI_VERSION] != EV_CURRENT) {
 		fprintf(stderr, "unrecognized ET_REL file %s\n", fname);
 		goto out;
 	}
 
 	gpfx = '_';
-	switch (w2(ehdr->e_machine)) {
+	switch (lf->ehdr.e_machine) {
 	default:
 		fprintf(stderr, "unrecognized e_machine %u %s\n",
-			w2(ehdr->e_machine), fname);
+			lf->ehdr.e_machine, fname);
 		goto out;
 	case EM_386:
 		reltype = R_386_32;
@@ -600,19 +600,19 @@ static int do_file(char const *const fname)
 		break;
 	}  /* end switch */
 
-	switch (ehdr->e_ident[EI_CLASS]) {
+	switch (lf->ehdr.e_ident[EI_CLASS]) {
 	default:
 		fprintf(stderr, "unrecognized ELF class %d %s\n",
-			ehdr->e_ident[EI_CLASS], fname);
+			lf->ehdr.e_ident[EI_CLASS], fname);
 		goto out;
 	case ELFCLASS32:
-		if (w2(ehdr->e_ehsize) != sizeof(Elf32_Ehdr)
-		||  w2(ehdr->e_shentsize) != sizeof(Elf32_Shdr)) {
+		if (lf->ehdr.e_ehsize != sizeof(Elf32_Ehdr)
+		||  lf->ehdr.e_shentsize != sizeof(Elf32_Shdr)) {
 			fprintf(stderr,
 				"unrecognized ET_REL file: %s\n", fname);
 			goto out;
 		}
-		if (w2(ehdr->e_machine) == EM_MIPS) {
+		if (lf->ehdr.e_machine == EM_MIPS) {
 			reltype = R_MIPS_32;
 			is_fake_mcount = MIPS_is_fake_mcount;
 		}
@@ -620,18 +620,17 @@ static int do_file(char const *const fname)
 			goto out;
 		break;
 	case ELFCLASS64: {
-		Elf64_Ehdr *const ghdr = (Elf64_Ehdr *)ehdr;
-		if (w2(ghdr->e_ehsize) != sizeof(Elf64_Ehdr)
-		||  w2(ghdr->e_shentsize) != sizeof(Elf64_Shdr)) {
+		if (lf->ehdr.e_ehsize != sizeof(Elf64_Ehdr)
+		||  lf->ehdr.e_shentsize != sizeof(Elf64_Shdr)) {
 			fprintf(stderr,
 				"unrecognized ET_REL file: %s\n", fname);
 			goto out;
 		}
-		if (w2(ghdr->e_machine) == EM_S390) {
+		if (lf->ehdr.e_machine == EM_S390) {
 			reltype = R_390_64;
 			mcount_adjust_64 = -14;
 		}
-		if (w2(ghdr->e_machine) == EM_MIPS) {
+		if (lf->ehdr.e_machine == EM_MIPS) {
 			reltype = R_MIPS_64;
 			Elf64_r_info = MIPS64_r_info;
 			is_fake_mcount = MIPS_is_fake_mcount;
