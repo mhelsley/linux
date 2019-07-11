@@ -44,17 +44,17 @@
 static int fd_map;	/* File descriptor for file being modified. */
 static int mmap_failed; /* Boolean flag. */
 static char gpfx;	/* prefix for global symbol name (sometimes '_') */
-static struct stat sb;	/* Remember .st_size, etc. */
 static const char *altmcount;	/* alternate mcount symbol name */
 static int warn_on_notrace_sect; /* warn when section has mcount not being recorded */
 static void *file_map;	/* pointer of the mapped file */
+static size_t file_map_size; /* original ELF file size */
 
 static struct elf *lf;
 
 static void mmap_cleanup(void)
 {
 	if (!mmap_failed)
-		munmap(file_map, sb.st_size);
+		munmap(file_map, file_map_size);
 	else
 		free(file_map);
 	file_map = NULL;
@@ -89,11 +89,13 @@ static void * umalloc(size_t size)
  */
 static void *mmap_file(char const *fname)
 {
+	struct stat sb;
+
 	/* Avoid problems if early cleanup() */
 	fd_map = -1;
 	mmap_failed = 1;
 	file_map = NULL;
-	sb.st_size = 0;
+	file_map_size = 0;
 
 	lf = elf_read(fname, O_RDWR);
 	if (!lf) {
@@ -125,6 +127,7 @@ static void *mmap_file(char const *fname)
 		}
 	} else
 		mmap_failed = 0;
+	file_map_size = sb.st_size;
 out:
 	fd_map = -1;
 
