@@ -72,6 +72,7 @@ static int append_func(uint_t const *const mloc0,
 			uint_t const *const mlocp,
 			Elf_Rel const *const mrel0,
 			Elf_Rel const *const mrelp,
+			unsigned int const loc_size,
 			unsigned int const rel_entsize,
 			unsigned int const symsec_sh_link)
 {
@@ -83,14 +84,14 @@ static int append_func(uint_t const *const mloc0,
 	unsigned const old_shnum = lf->ehdr.e_shnum;
 
 	/* add section: __mcount_loc */
-	sec = elf_create_section(lf, mc_name + (sizeof(Elf_Rela) == rel_entsize) + strlen(".rel"), _size, mlocp - mloc0);
+	sec = elf_create_section(lf, mc_name + (sizeof(Elf_Rela) == rel_entsize) + strlen(".rel"), loc_size, mlocp - mloc0);
 	if (!sec)
 		return -1;
 
 	// created sec->sh.sh_size = (void *)mlocp - (void *)mloc0;
 	sec->sh.sh_link = 0;/* TODO objtool uses this? */
 	sec->sh.sh_info = 0;/* TODO objtool uses this? */
-	sec->sh.sh_addralign = _size;
+	sec->sh.sh_addralign = loc_size;
 	// created sec->sh.sh_entsize = _size;
 
 	// assert sec->data->d_size == (void *)mlocp - (void *)mloc0
@@ -109,7 +110,7 @@ static int append_func(uint_t const *const mloc0,
 	sec->sh.sh_flags = 0;
 	sec->sh.sh_link = find_section_by_name(lf, ".symtab")->idx;
 	sec->sh.sh_info = old_shnum;
-	sec->sh.sh_addralign = _size;
+	sec->sh.sh_addralign = loc_size;
 
 	// assert sec->data->d_size == (void *)mrelp - (void *)mrel0
 	memcpy(sec->data->d_buf, mrel0, sec->data->d_size);
@@ -233,7 +234,7 @@ static int do_func(unsigned const reltype)
 	}
 	if (!result && mloc0 != mlocp)
 		result = append_func(mloc0, mlocp, mrel0, mrelp,
-				     rel_entsize, symsec_sh_link);
+				     _size, rel_entsize, symsec_sh_link);
 out:
 	free(mrel0);
 	free(mloc0);
