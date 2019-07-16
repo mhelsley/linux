@@ -629,6 +629,7 @@ int elf_rebuild_rela_section(struct section *sec)
 		size = nr * sizeof(*rels);
 	}
 
+	/* TODO memory leak? We're losing the old data buffer. */
 	sec->data->d_buf = relas;
 	sec->data->d_size = size;
 
