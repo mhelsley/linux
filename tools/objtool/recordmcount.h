@@ -18,7 +18,6 @@
  * Copyright 2010 Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.
  */
 #undef append_func
-#undef mcount_adjust
 #undef sift_rel_mcount
 #undef do_func
 #undef Elf_Shdr
@@ -35,7 +34,6 @@
 # define append_func		append64
 # define sift_rel_mcount	sift64_rel_mcount
 # define do_func		do64
-# define mcount_adjust		mcount_adjust_64
 # define Elf_Rel		Elf64_Rel
 # define Elf_Rela		Elf64_Rela
 # define ELF_R_INFO		ELF64_R_INFO
@@ -48,7 +46,6 @@
 # define append_func		append32
 # define sift_rel_mcount	sift32_rel_mcount
 # define do_func		do32
-# define mcount_adjust		mcount_adjust_32
 # define Elf_Rel		Elf32_Rel
 # define Elf_Rela		Elf32_Rela
 # define ELF_R_INFO		ELF32_R_INFO
@@ -64,8 +61,6 @@ static void fn_ELF_R_INFO(Elf_Rel *const rp, unsigned sym, unsigned type)
 	rp->r_info = _w(ELF_R_INFO(sym, type));
 }
 static void (*Elf_r_info)(Elf_Rel *const rp, unsigned sym, unsigned type) = fn_ELF_R_INFO;
-
-static int mcount_adjust = 0;
 
 /* Append the new  __mcount_loc and its relocations. */
 static int append_func(uint_t const *const mloc0,

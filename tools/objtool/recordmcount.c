@@ -382,6 +382,12 @@ static unsigned tot_relsize(unsigned int *rel_entsize)
 	}
 	return totrelsz;
 }
+
+/* zero or a small negative offset added to get the start of the call
+ * instruction
+ */
+static int mcount_adjust = 0;
+
 /* 32 bit and 64 bit are very similar */
 #include "recordmcount.h"
 #define RECORD_MCOUNT_64
@@ -480,7 +486,7 @@ static int do_file(char const *const fname)
 		rel_type_nop = R_386_NONE;
 		make_nop = make_nop_x86;
 		ideal_nop = ideal_nop5_x86_32;
-		mcount_adjust_32 = -1;
+		mcount_adjust = -1;
 		gpfx = 0;
 		break;
 	case EM_ARM:
@@ -508,7 +514,7 @@ static int do_file(char const *const fname)
 		ideal_nop = ideal_nop5_x86_64;
 		reltype = R_X86_64_64;
 		rel_type_nop = R_X86_64_NONE;
-		mcount_adjust_64 = -1;
+		mcount_adjust = -1;
 		gpfx = 0;
 		break;
 	}  /* end switch */
@@ -541,7 +547,7 @@ static int do_file(char const *const fname)
 		}
 		if (lf->ehdr.e_machine == EM_S390) {
 			reltype = R_390_64;
-			mcount_adjust_64 = -14;
+			mcount_adjust = -14;
 		}
 		if (lf->ehdr.e_machine == EM_MIPS) {
 			reltype = R_MIPS_64;
