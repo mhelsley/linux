@@ -440,8 +440,7 @@ static int nop_mcount(struct section * const rels,
 	return 0;
 }
 
-static char const *has_rel_mcount(const struct section * const rels,
-				  char const *const fname)
+static char const *has_rel_mcount(const struct section * const rels)
 {
 	const struct section *txts;
 	if (rels->sh.sh_type != SHT_REL && rels->sh.sh_type != SHT_RELA)
@@ -453,14 +452,14 @@ static char const *has_rel_mcount(const struct section * const rels,
 	return txts->name;
 }
 
-static unsigned tot_relsize(const char *const fname, unsigned int *rel_entsize)
+static unsigned tot_relsize(unsigned int *rel_entsize)
 {
 	const struct section *sec;
 	unsigned totrelsz = 0;
 	char const *txtname;
 
 	list_for_each_entry(sec, &lf->sections, list) {
-		txtname = has_rel_mcount(sec, fname);
+		txtname = has_rel_mcount(sec);
 		if (!(txtname && is_mcounted_section_name(txtname)))
 			continue;
 		totrelsz += sec->sh.sh_size;
