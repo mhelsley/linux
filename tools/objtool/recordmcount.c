@@ -208,7 +208,7 @@ static int is_mcounted_section_name(char const *const txtname)
 		strcmp(".cpuidle.text", txtname) == 0;
 }
 
-static unsigned get_mcountsym(struct rela *rela)
+static unsigned int get_mcount_sym_info(struct rela *rela)
 {
 	struct symbol *sym = rela->sym;
 	char const *symname = sym->name;
@@ -318,16 +318,16 @@ static int nop_mcount(struct section * const rels,
 {
 	struct rela *rela;
 	struct section *txts = find_section_by_index(lf, rels->sh.sh_info);
-	unsigned mcountsym = 0;
+	unsigned int mcount_sym_info = 0;
 	int once = 0;
 
 	list_for_each_entry(rela, &rels->rela_list, list) {
 		int ret = -1;
 
-		if (!mcountsym)
-			mcountsym = get_mcountsym(rela);
+		if (!mcount_sym_info)
+			mcount_sym_info = get_mcount_sym_info(rela);
 
-		if (mcountsym == GELF_R_INFO(rela->sym->idx, rela->type) && !is_fake_mcount(rela)) {
+		if (mcount_sym_info == GELF_R_INFO(rela->sym->idx, rela->type) && !is_fake_mcount(rela)) {
 			if (make_nop) {
 				ret = make_nop(txts, rela->offset);
 				if (ret < 0)
@@ -388,38 +388,13 @@ static unsigned tot_relsize(unsigned int *rel_entsize)
  */
 static int mcount_adjust = 0;
 
+/* Size of an entry in __mcount_loc; 4 or 8 */
+static size_t loc_size;
+
 /* 32 bit and 64 bit are very similar */
 #include "recordmcount.h"
 #define RECORD_MCOUNT_64
 #include "recordmcount.h"
-
-/* 64-bit EM_MIPS has weird ELF64_Rela.r_info.
- * http://techpubs.sgi.com/library/manuals/4000/007-4658-001/pdf/007-4658-001.pdf
- * We interpret Table 29 Relocation Operation (Elf64_Rel, Elf64_Rela) [p.40]
- * to imply the order of the members; the spec does not say so.
- *	typedef unsigned char Elf64_Byte;
- * fails on MIPS64 because their <elf.h> already has it!
- */
-
-typedef uint8_t myElf64_Byte;		/* Type for a 8-bit quantity.  */
-
-union mips_r_info {
-	Elf64_Xword r_info;
-	struct {
-		Elf64_Word r_sym;		/* Symbol index.  */
-		myElf64_Byte r_ssym;		/* Special symbol.  */
-		myElf64_Byte r_type3;		/* Third relocation.  */
-		myElf64_Byte r_type2;		/* Second relocation.  */
-		myElf64_Byte r_type;		/* First relocation.  */
-	} r_mips;
-};
-
-static void MIPS64_r_info(Elf64_Rel *const rp, unsigned sym, unsigned type)
-{
-	rp->r_info = ((union mips_r_info){
-		.r_mips = { .r_sym = w(sym), .r_type = type }
-	}).r_info;
-}
 
 static int do_file(char const *const fname)
 {
@@ -535,6 +510,7 @@ static int do_file(char const *const fname)
 			reltype = R_MIPS_32;
 			is_fake_mcount = MIPS_is_fake_mcount;
 		}
+		loc_size = 4;
 		if (do32(reltype) < 0)
 			goto out;
 		break;
@@ -551,9 +527,9 @@ static int do_file(char const *const fname)
 		}
 		if (lf->ehdr.e_machine == EM_MIPS) {
 			reltype = R_MIPS_64;
-			Elf64_r_info = MIPS64_r_info;
 			is_fake_mcount = MIPS_is_fake_mcount;
 		}
+		loc_size = 8;
 		if (do64(reltype) < 0)
 			goto out;
 		break;
