@@ -17,67 +17,16 @@
  * This conversion to macros was done by:
  * Copyright 2010 Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.
  */
-#undef sift_rel_mcount
 #undef do_func
 #undef Elf_Rela
 
 #ifdef RECORD_MCOUNT_64
-# define sift_rel_mcount	sift64_rel_mcount
 # define do_func		do64
 # define Elf_Rela		Elf64_Rela
 #else
-# define sift_rel_mcount	sift32_rel_mcount
 # define do_func		do32
 # define Elf_Rela		Elf32_Rela
 #endif
-
-/*
- * Look at the relocations in order to find the calls to mcount.
- * Accumulate the section offsets that are found, and their relocation info,
- * onto the end of the existing arrays.
- */
-static void sift_rel_mcount(GElf_Addr **mlocpp,
-			       GElf_Sxword *r_offsetp,
-			       void **const mrelpp,
-			       const struct section * const rels,
-			       unsigned const recsym_index,
-			       unsigned long const recval,
-			       unsigned const reltype,
-			       bool is_rela)
-{
-	GElf_Rel *mrelp = *mrelpp;
-	GElf_Rela *mrelap = *mrelpp;
-	unsigned int mcount_sym_info = 0;
-	struct rela *rela;
-
-	list_for_each_entry(rela, &rels->rela_list, list) {
-		unsigned long addend;
-
-		if (!mcount_sym_info)
-			mcount_sym_info = get_mcount_sym_info(rela);
-
-		if (mcount_sym_info != GELF_R_INFO(rela->sym->idx, rela->type) || is_fake_mcount(rela))
-			continue;
-
-		addend = rela->offset - recval + mcount_adjust;
-		if (is_rela) {
-			mrelap->r_offset = *r_offsetp;
-			mrelap->r_info = GELF_R_INFO(recsym_index, reltype);
-			mrelap->r_addend = addend;
-			mrelap++;
-			**mlocpp = 0;
-		} else {
-			mrelp->r_offset = *r_offsetp;
-			mrelp->r_info = GELF_R_INFO(recsym_index, reltype);
-			mrelp++;
-			**mlocpp = addend;
-		}
-		(*mlocpp)++;
-		r_offsetp += loc_size;
-	}
-	*mrelpp = is_rela ? (void *)mrelap : (void *)mrelp;
-}
-
 
 /* Overall supervision for Elf32 ET_REL file. */
 static int do_func(unsigned const reltype)
