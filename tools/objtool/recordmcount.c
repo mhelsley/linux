@@ -575,7 +575,7 @@ static int do_file(char const *const fname)
 			is_fake_mcount = MIPS_is_fake_mcount;
 		}
 		loc_size = 4;
-		if (do32(reltype) < 0)
+		if (do32(reltype, sizeof(Elf32_Rela)) < 0)
 			goto out;
 		break;
 	case ELFCLASS64: {
@@ -594,7 +594,7 @@ static int do_file(char const *const fname)
 			is_fake_mcount = MIPS_is_fake_mcount;
 		}
 		loc_size = 8;
-		if (do64(reltype) < 0)
+		if (do64(reltype, sizeof(Elf32_Rela)) < 0)
 			goto out;
 		break;
 	}
