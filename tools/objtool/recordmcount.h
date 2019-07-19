@@ -18,18 +18,15 @@
  * Copyright 2010 Steven Rostedt <srostedt@redhat.com>, Red Hat Inc.
  */
 #undef do_func
-#undef Elf_Rela
 
 #ifdef RECORD_MCOUNT_64
 # define do_func		do64
-# define Elf_Rela		Elf64_Rela
 #else
 # define do_func		do32
-# define Elf_Rela		Elf32_Rela
 #endif
 
 /* Overall supervision for Elf32 ET_REL file. */
-static int do_func(unsigned const reltype)
+static int do_func(unsigned const reltype, size_t rela_size)
 {
 	/* Upper bound on space: assume all relevant relocs are for mcount. */
 	unsigned       totrelsz;
@@ -69,7 +66,7 @@ static int do_func(unsigned const reltype)
 		return -1;
 	}
 
-	is_rela = (sizeof(Elf_Rela) == rel_entsize);
+	is_rela = (rela_size == rel_entsize);
 	mc_name = is_rela
 			? ".rela__mcount_loc"
 			:  ".rel__mcount_loc";
