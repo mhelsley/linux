@@ -147,53 +147,6 @@ static int make_nop_arm64(struct section *txts, size_t const offset)
 	return 0;
 }
 
-/* w8rev, w8nat, ...: Handle endianness. */
-
-static uint64_t w8rev(uint64_t const x)
-{
-	return   ((0xff & (x >> (0 * 8))) << (7 * 8))
-	       | ((0xff & (x >> (1 * 8))) << (6 * 8))
-	       | ((0xff & (x >> (2 * 8))) << (5 * 8))
-	       | ((0xff & (x >> (3 * 8))) << (4 * 8))
-	       | ((0xff & (x >> (4 * 8))) << (3 * 8))
-	       | ((0xff & (x >> (5 * 8))) << (2 * 8))
-	       | ((0xff & (x >> (6 * 8))) << (1 * 8))
-	       | ((0xff & (x >> (7 * 8))) << (0 * 8));
-}
-
-static uint32_t w4rev(uint32_t const x)
-{
-	return   ((0xff & (x >> (0 * 8))) << (3 * 8))
-	       | ((0xff & (x >> (1 * 8))) << (2 * 8))
-	       | ((0xff & (x >> (2 * 8))) << (1 * 8))
-	       | ((0xff & (x >> (3 * 8))) << (0 * 8));
-}
-
-static uint32_t w2rev(uint16_t const x)
-{
-	return   ((0xff & (x >> (0 * 8))) << (1 * 8))
-	       | ((0xff & (x >> (1 * 8))) << (0 * 8));
-}
-
-static uint64_t w8nat(uint64_t const x)
-{
-	return x;
-}
-
-static uint32_t w4nat(uint32_t const x)
-{
-	return x;
-}
-
-static uint32_t w2nat(uint16_t const x)
-{
-	return x;
-}
-
-static uint64_t (*w8)(uint64_t);
-static uint32_t (*w)(uint32_t);
-static uint32_t (*w2)(uint16_t);
-
 /* Names of the sections that could contain calls to mcount. */
 static int is_mcounted_section_name(char const *const txtname)
 {
@@ -564,22 +517,12 @@ static int do_file(char const *const fname)
 		goto out;
 	}
 
-	w = w4nat;
-	w2 = w2nat;
-	w8 = w8nat;
 	switch (lf->ehdr.e_ident[EI_DATA]) {
-		static unsigned int const endian = 1;
 	default:
 		fprintf(stderr, "unrecognized ELF data encoding %d: %s\n",
 			lf->ehdr.e_ident[EI_DATA], fname);
 		goto out;
 	case ELFDATA2LSB:
-		if (*(unsigned char const *)&endian != 1) {
-			/* objtool is big endian, file.o is little endian. */
-			w = w4rev;
-			w2 = w2rev;
-			w8 = w8rev;
-		}
 		ideal_nop4_arm = ideal_nop4_arm_le;
 		bl_mcount_arm = bl_mcount_arm_le;
 		push_arm = push_arm_le;
@@ -587,12 +530,6 @@ static int do_file(char const *const fname)
 		push_bl_mcount_thumb = push_bl_mcount_thumb_le;
 		break;
 	case ELFDATA2MSB:
-		if (*(unsigned char const *)&endian != 0) {
-			/*  objtool is little endian, file.o is big endian. */
-			w = w4rev;
-			w2 = w2rev;
-			w8 = w8rev;
-		}
 		ideal_nop4_arm = ideal_nop4_arm_be;
 		bl_mcount_arm = bl_mcount_arm_be;
 		push_arm = push_arm_be;
