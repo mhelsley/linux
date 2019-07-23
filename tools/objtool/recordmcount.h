@@ -175,7 +175,7 @@ static int do_func(unsigned const reltype)
 	uint_t *      mloc0;
 	uint_t *      mlocp;
 
-	unsigned rel_entsize = 0;
+	unsigned int rel_entsize = 0;
 	unsigned symsec_sh_link = 0;
 
 	struct section *sec;
@@ -185,7 +185,7 @@ static int do_func(unsigned const reltype)
 	if (find_section_by_name(lf, "__mcount_loc") != NULL)
 		return 0;
 
-	totrelsz = tot_relsize();
+	totrelsz = tot_relsize(&rel_entsize);
 	if (totrelsz == 0)
 		return 0;
 	mrel0 = umalloc(totrelsz);
@@ -217,7 +217,6 @@ static int do_func(unsigned const reltype)
 				goto out;
 			}
 
-			rel_entsize = sec->sh.sh_entsize;
 			mlocp = sift_rel_mcount(mlocp,
 				(void *)mlocp - (void *)mloc0, &mrelp,
 				sec, recsym_index, (uint_t)recval, reltype);
