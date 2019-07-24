@@ -569,7 +569,7 @@ static int do_file(char const *const fname)
 			reltype = R_MIPS_32;
 			is_fake_mcount32 = MIPS32_is_fake_mcount;
 		}
-		if (do32(ehdr, fname, reltype) < 0)
+		if (do32(ehdr, reltype) < 0)
 			goto out;
 		break;
 	case ELFCLASS64: {
@@ -590,7 +590,7 @@ static int do_file(char const *const fname)
 			Elf64_r_info = MIPS64_r_info;
 			is_fake_mcount64 = MIPS64_is_fake_mcount;
 		}
-		if (do64(ghdr, fname, reltype) < 0)
+		if (do64(ghdr, reltype) < 0)
 			goto out;
 		break;
 	}
