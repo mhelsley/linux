@@ -472,8 +472,7 @@ static unsigned find_secsym_ndx(unsigned const txtndx,
 /* Evade ISO C restriction: no declaration after statement in has_rel_mcount. */
 static char const * __has_rel_mcount(GElf_Shdr const *const relhdr, /* reltype */
 				     Elf_Shdr const *const shdr0,
-				     char const *const shstrtab,
-				     char const *const fname)
+				     char const *const shstrtab)
 {
 	/* .sh_info depends on .sh_type == SHT_REL[,A] */
 	Elf_Shdr const *const txthdr = &shdr0[relhdr->sh_info];
@@ -487,25 +486,23 @@ static char const * __has_rel_mcount(GElf_Shdr const *const relhdr, /* reltype *
 
 static char const *has_rel_mcount(GElf_Shdr const *const relhdr,
 				  Elf_Shdr const *const shdr0,
-				  char const *const shstrtab,
-				  char const *const fname)
+				  char const *const shstrtab)
 {
 	if (relhdr->sh_type != SHT_REL && relhdr->sh_type != SHT_RELA)
 		return NULL;
-	return __has_rel_mcount(relhdr, shdr0, shstrtab, fname);
+	return __has_rel_mcount(relhdr, shdr0, shstrtab);
 }
 
 
 static unsigned tot_relsize(Elf_Shdr const *const shdr0,
-			    const char *const shstrtab,
-			    const char *const fname)
+			    const char *const shstrtab)
 {
 	struct section *sec;
 	unsigned totrelsz = 0;
 	char const *txtname;
 
 	list_for_each_entry(sec, &lf->sections, list) {
-		txtname = has_rel_mcount(&sec->sh, shdr0, shstrtab, fname);
+		txtname = has_rel_mcount(&sec->sh, shdr0, shstrtab);
 		if (txtname && is_mcounted_section_name(txtname))
 			totrelsz += sec->sh.sh_size;
 	}
@@ -514,7 +511,7 @@ static unsigned tot_relsize(Elf_Shdr const *const shdr0,
 
 
 /* Overall supervision for Elf32 ET_REL file. */
-static int do_func(Elf_Ehdr *const ehdr, char const *const fname,
+static int do_func(Elf_Ehdr *const ehdr
 		   unsigned const reltype)
 {
 	Elf_Shdr *const shdr0 = (Elf_Shdr *)(_w(ehdr->e_shoff)
@@ -544,7 +541,7 @@ static int do_func(Elf_Ehdr *const ehdr, char const *const fname,
 	if (find_section_by_name(lf, "__mcount_loc") != NULL)
 		return 0;
 
-	totrelsz = tot_relsize(shdr0, shstrtab, fname);
+	totrelsz = tot_relsize(shdr0, shstrtab);
 	if (totrelsz == 0)
 		return 0;
 	mrel0 = umalloc(totrelsz);
@@ -565,7 +562,7 @@ static int do_func(Elf_Ehdr *const ehdr, char const *const fname,
 
 		relhdr = &sec->sh;
 		txtname = has_rel_mcount(relhdr, shdr0,
-			shstrtab, fname);
+			shstrtab);
 		if (txtname && is_mcounted_section_name(txtname)) {
 			uint_t recval = 0;
 			unsigned const int recsym_index = find_secsym_ndx(
