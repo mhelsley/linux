@@ -7,6 +7,7 @@
 #define _SPECIAL_H
 
 #include <stdbool.h>
+#include "check.h"
 #include "elf.h"
 #include "arch_special.h"
 
@@ -36,4 +37,8 @@ static inline void arch_handle_alternative(unsigned short feature,
 }
 #endif
 
+int arch_add_jump_table_dests(struct objtool_file *file,
+			      struct instruction *insn);
+struct rela *arch_find_switch_table(struct objtool_file *file,
+				    struct instruction *insn);
 #endif /* _SPECIAL_H */
