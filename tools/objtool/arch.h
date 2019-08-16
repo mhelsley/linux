@@ -27,6 +27,7 @@ enum insn_type {
 	INSN_CLAC,
 	INSN_STD,
 	INSN_CLD,
+	INSN_UNKNOWN,
 	INSN_OTHER,
 };
 
