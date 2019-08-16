@@ -61,6 +61,12 @@ struct op_src {
 	int offset;
 };
 
+struct op_extra {
+	unsigned char used;
+	unsigned char reg;
+	int offset;
+};
+
 struct stack_op {
 	struct op_dest dest;
 	struct op_src src;
