@@ -1,0 +1,5 @@
+objtool-y += arch_special.o
+objtool-y += bit_operations.o
+objtool-y += decode.o
+
+CFLAGS_decode.o += -I$(OUTPUT)arch/arm64/lib
