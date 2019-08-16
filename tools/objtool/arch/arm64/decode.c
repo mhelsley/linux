@@ -106,6 +106,34 @@ unsigned long arch_dest_rela_offset(int addend)
 	return addend;
 }
 
+/*
+ * In order to know if we are in presence of a sibling
+ * call and not in presence of a switch table we look
+ * back at the previous instructions and see if we are
+ * jumping inside the same function that we are already
+ * in.
+ */
+bool arch_is_insn_sibling_call(struct instruction *insn)
+{
+	struct instruction *prev;
+	struct list_head *l;
+	struct symbol *sym;
+	list_for_each_prev(l, &insn->list) {
+		prev = list_entry(l, struct instruction, list);
+		if (!prev->func ||
+		    prev->func->pfunc != insn->func->pfunc)
+			return false;
+		if (prev->stack_op.src.reg != ADR_SOURCE)
+			continue;
+		sym = find_symbol_containing(insn->sec, insn->immediate);
+		if (!sym || sym->type != STT_FUNC)
+			return false;
+		else if (sym->type == STT_FUNC)
+			return true;
+		break;
+	}
+	return false;
+}
 static int is_arm64(struct elf *elf)
 {
 	switch (elf->ehdr.e_machine) {
