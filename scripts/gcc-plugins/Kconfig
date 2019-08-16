@@ -113,4 +113,13 @@ config GCC_PLUGIN_ARM_SSP_PER_TASK
 	bool
 	depends on GCC_PLUGINS && ARM
 
+config GCC_PLUGIN_SWITCH_TABLES
+	bool "GCC Plugin: Identify switch tables at compile time"
+	default y
+	depends on STACK_VALIDATION && ARM64
+	help
+	  Plugin to identify switch tables generated at compile time and store
+	  them in a .objtool_data section. Objtool will then use that section
+	  to analyse the different execution path of the switch table.
+
 endmenu
