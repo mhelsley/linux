@@ -35,8 +35,8 @@ struct instruction *find_insn(struct objtool_file *file,
 	return NULL;
 }
 
-static struct instruction *next_insn_same_sec(struct objtool_file *file,
-					      struct instruction *insn)
+struct instruction *next_insn_same_sec(struct objtool_file *file,
+				       struct instruction *insn)
 {
 	struct instruction *next = list_next_entry(insn, list);
 
@@ -1800,7 +1800,7 @@ static int validate_sibling_call(struct instruction *insn, struct insn_state *st
 {
 	if (has_modified_stack_frame(state)) {
 		WARN_FUNC("sibling call from callable instruction with modified stack frame",
-				insn->sec, insn->offset);
+			  insn->sec, insn->offset);
 		return 1;
 	}
 

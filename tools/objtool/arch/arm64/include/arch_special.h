@@ -15,6 +15,8 @@
 #ifndef _ARM64_ARCH_SPECIAL_H
 #define _ARM64_ARCH_SPECIAL_H
 
+#include <linux/types.h>
+
 #define EX_ENTRY_SIZE		8
 #define EX_ORIG_OFFSET		0
 #define EX_NEW_OFFSET		4
@@ -29,5 +31,11 @@
 #define ALT_FEATURE_OFFSET	8
 #define ALT_ORIG_LEN_OFFSET	10
 #define ALT_NEW_LEN_OFFSET	11
+
+struct switch_table_info {
+	u64 switch_table_label;
+	u64 nb_entries;
+	u64 offset_unsigned;
+} __attribute__((__packed__));
 
 #endif /* _ARM64_ARCH_SPECIAL_H */
