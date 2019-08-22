@@ -154,6 +154,13 @@ config SAMPLE_VFIO_MDEV_MBOCHS
 	  Specifically it does *not* include any legacy vga stuff.
 	  Device looks a lot like "qemu -device secondary-vga".
 
+config SAMPLE_VSOCK
+	bool "Build virtual socket sample code"
+	depends on VSOCKETS && (VIRTIO_VSOCKETS || VMCI_VSOCKETS || HYPERV_VSOCKETS || VHOST_VSOCK)
+	help
+	  Build the vsock sample testing tool, vspoke, which can
+	  enable testing of basic AF_VSOCK functionality
+
 config SAMPLE_ANDROID_BINDERFS
 	bool "Build Android binderfs example"
 	depends on CONFIG_ANDROID_BINDERFS
