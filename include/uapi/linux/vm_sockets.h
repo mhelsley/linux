@@ -80,6 +80,18 @@
 
 #define SO_VM_SOCKETS_NONBLOCK_TXRX 7
 
+/* Option name for configuring the vsock transport to use.
+ * Supply the name of the requested transport as a string of up length up to
+ * 255.
+ * If the transport is not loaded/available then EINVAL is returned
+ * If the length exceeds 255 or is less than one then EINVAL is returned
+ * If the socket is already bound to/using a transport then EISCONN is returned
+ *
+ * Only available for hypervisor endpoints -- returns ENOPROTOOPT if this
+ * option is unavailable/unsupported.
+ */
+#define SO_VM_SOCKETS_TRANSPORT 8
+
 /* The vSocket equivalent of INADDR_ANY.  This works for the svm_cid field of
  * sockaddr_vm and indicates the context ID of the current endpoint.
  */

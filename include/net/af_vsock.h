@@ -95,7 +95,7 @@ struct vsock_transport_send_notify_data {
 struct vsock_transport {
 	struct list_head transport_list;
 	struct module *owner;
-	const char *name;
+	const char *name; /* uapi-visible via set/getsockopt() */
 
 	/* Initialize/tear-down socket. */
 	int (*init)(struct vsock_sock *, struct vsock_sock *);

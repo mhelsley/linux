@@ -221,6 +221,11 @@ static void __vsock_insert_connected(struct list_head *list,
 	list_add(&vsk->connected_table, list);
 }
 
+static bool __vsock_is_transport_locked(struct vsock_sock *vsk)
+{
+	return !list_empty(&vsk->connected_table);
+}
+
 static void __vsock_remove_bound(struct vsock_sock *vsk)
 {
 	list_del_init(&vsk->bound_table);
@@ -1107,6 +1112,133 @@ static int vsock_dgram_recvmsg(struct socket *sock, struct msghdr *msg,
 	return transport->dgram_dequeue(vsk, msg, len, flags);
 }
 
+static int __vsock_set_transport(struct vsock_sock *vsk, const char *name)
+{
+	struct vsock_transport *t, *old;
+
+	list_for_each_entry(t, &transports, transport_list) {
+		if (t->name && !strcmp(t->name, name)) {
+			old = vsk->transport;
+			__module_get(t->owner);
+			vsk->transport = t;
+			old->release(vsk);
+			module_put(old->owner);
+			return t->init(vsk, NULL);
+		}
+	}
+	return -EINVAL;
+}
+
+static char *__copy_sockopt_string(char __user *optval, unsigned int optlen)
+{
+	char *optstr;
+
+	if ((optlen < 1) || (optlen > 255))
+		return ERR_PTR(-EINVAL);
+	optstr = kzalloc(optlen + 1, GFP_KERNEL);
+	if (!optstr)
+		return ERR_PTR(-ENOMEM);
+	if (copy_from_user(optstr, optval, optlen) != 0) {
+		kfree(optstr);
+		return ERR_PTR(-EFAULT);
+	}
+	optstr[optlen] = 0;
+	return optstr;
+}
+
+static int vsock_dgram_setsockopt(struct socket *sock,
+				  int level,
+				  int optname,
+				  char __user *optval,
+				  unsigned int optlen)
+{
+	int err;
+	struct sock *sk;
+	struct vsock_sock *vsk;
+
+	if (level != AF_VSOCK)
+		return -ENOPROTOOPT;
+
+	err = 0;
+	sk = sock->sk;
+	vsk = vsock_sk(sk);
+
+	lock_sock(sk);
+
+	switch (optname) {
+	case SO_VM_SOCKETS_TRANSPORT: {
+		char *transport_name;
+
+		if (__vsock_is_transport_locked(vsk)) {
+			err = -EISCONN;
+			goto exit;
+		}
+		transport_name = __copy_sockopt_string(optval, optlen);
+		if (IS_ERR(transport_name)) {
+			kfree(transport_name);
+			err = PTR_ERR(transport_name);
+			goto exit;
+		}
+		if (!strcmp(transport_name, "kernel")) {
+			kfree(transport_name);
+			err = -EINVAL;
+			goto exit;
+		}
+		err = __vsock_set_transport(vsk, transport_name);
+		kfree(transport_name);
+		break;
+	}
+	default:
+		err = -ENOPROTOOPT;
+		break;
+	}
+
+exit:
+	release_sock(sk);
+	return err;
+}
+
+static int vsock_dgram_getsockopt(struct socket *sock,
+				  int level, int optname,
+				  char __user *optval,
+				  int __user *optlen)
+{
+	int err;
+	int len;
+	struct sock *sk;
+	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
+
+	if (level != AF_VSOCK)
+		return -ENOPROTOOPT;
+
+	err = get_user(len, optlen);
+	if (err != 0)
+		return err;
+
+	err = 0;
+	sk = sock->sk;
+	vsk = vsock_sk(sk);
+	transport = vsk->transport;
+
+	switch (optname) {
+	case SO_VM_SOCKETS_TRANSPORT: {
+		size_t name_len = strlen(transport->name);
+
+		if (len < name_len)
+			return -ENOBUFS;
+		err = copy_to_user(optval, transport->name, name_len);
+		if (err != 0)
+			return -EFAULT;
+		break;
+	}
+	default:
+		return -ENOPROTOOPT;
+	}
+
+	return put_user(len, optlen);
+}
+
 static const struct proto_ops vsock_dgram_ops = {
 	.family = PF_VSOCK,
 	.owner = THIS_MODULE,
@@ -1120,8 +1252,8 @@ static const struct proto_ops vsock_dgram_ops = {
 	.ioctl = sock_no_ioctl,
 	.listen = sock_no_listen,
 	.shutdown = vsock_shutdown,
-	.setsockopt = sock_no_setsockopt,
-	.getsockopt = sock_no_getsockopt,
+	.setsockopt = vsock_dgram_setsockopt,
+	.getsockopt = vsock_dgram_getsockopt,
 	.sendmsg = vsock_dgram_sendmsg,
 	.recvmsg = vsock_dgram_recvmsg,
 	.mmap = sock_no_mmap,
@@ -1447,6 +1579,29 @@ static int vsock_stream_setsockopt(struct socket *sock,
 	lock_sock(sk);
 
 	switch (optname) {
+	case SO_VM_SOCKETS_TRANSPORT: {
+		char *transport_name;
+
+		err = (sk->sk_state == TCP_ESTABLISHED) || \
+			vsock_addr_bound(&vsk->remote_addr) || \
+			__vsock_is_transport_locked(vsk) ? -EISCONN : 0;
+		if (err)
+			goto exit;
+		transport_name = __copy_sockopt_string(optval, optlen);
+		if (IS_ERR(transport_name)) {
+			kfree(transport_name);
+			err = PTR_ERR(transport_name);
+			goto exit;
+		}
+		if (!strcmp(transport_name, "kernel")) {
+			kfree(transport_name);
+			err = -EINVAL;
+			goto exit;
+		}
+		err = __vsock_set_transport(vsk, transport_name);
+		kfree(transport_name);
+		break;
+	}
 	case SO_VM_SOCKETS_BUFFER_SIZE:
 		COPY_IN(val);
 		transport->set_buffer_size(vsk, val);
@@ -1527,6 +1682,16 @@ static int vsock_stream_getsockopt(struct socket *sock,
 	transport = vsk->transport;
 
 	switch (optname) {
+	case SO_VM_SOCKETS_TRANSPORT: {
+		size_t name_len = strlen(transport->name);
+
+		if (len < name_len)
+			return -ENOBUFS;
+		err = copy_to_user(optval, transport->name, name_len);
+		if (err != 0)
+			return -EFAULT;
+		break;
+	}
 	case SO_VM_SOCKETS_BUFFER_SIZE:
 		val = transport->get_buffer_size(vsk);
 		COPY_OUT(val);
