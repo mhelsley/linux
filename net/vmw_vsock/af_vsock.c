@@ -2031,9 +2031,6 @@ int register_vsock_transport(struct vsock_transport *t)
 		err = __vsock_core_init();
 		if (err)
 			goto out;
-	} else {
-		err = -EBUSY;
-		goto out;
 	}
 	__module_get(t->owner);
 	list_add_tail(&transports, &t->transport_list);
