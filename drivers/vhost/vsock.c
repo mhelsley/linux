@@ -756,6 +756,10 @@ static struct miscdevice vhost_vsock_misc = {
 
 static struct virtio_transport vhost_transport = {
 	.transport = {
+		.transport_list = LIST_HEAD_INIT(vhost_transport.transport.transport_list),
+		.owner = THIS_MODULE,
+		.name = "vhost",
+
 		.get_local_cid            = vhost_transport_get_local_cid,
 
 		.init                     = virtio_transport_do_socket_init,
@@ -804,7 +808,7 @@ static int __init vhost_vsock_init(void)
 {
 	int ret;
 
-	ret = vsock_core_init(&vhost_transport.transport);
+	ret = register_vsock_transport(&vhost_transport.transport);
 	if (ret < 0)
 		return ret;
 	return misc_register(&vhost_vsock_misc);
@@ -813,7 +817,7 @@ static int __init vhost_vsock_init(void)
 static void __exit vhost_vsock_exit(void)
 {
 	misc_deregister(&vhost_vsock_misc);
-	vsock_core_exit();
+	unregister_vsock_transport(&vhost_transport.transport);
 };
 
 module_init(vhost_vsock_init);

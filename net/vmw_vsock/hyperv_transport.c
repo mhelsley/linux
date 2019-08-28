@@ -874,6 +874,10 @@ static u64 hvs_get_max_buffer_size(struct vsock_sock *vsk)
 }
 
 static struct vsock_transport hvs_transport = {
+	.transport_list = LIST_HEAD_INIT(hvs_transport.transport_list),
+	.owner = THIS_MODULE,
+	.name = "hyperv",
+
 	.get_local_cid            = hvs_get_local_cid,
 
 	.init                     = hvs_sock_init,
@@ -962,7 +966,7 @@ static int __init hvs_init(void)
 	if (ret != 0)
 		return ret;
 
-	ret = vsock_core_init(&hvs_transport);
+	ret = register_vsock_transport(&hvs_transport);
 	if (ret) {
 		vmbus_driver_unregister(&hvs_drv);
 		return ret;
@@ -973,7 +977,7 @@ static int __init hvs_init(void)
 
 static void __exit hvs_exit(void)
 {
-	vsock_core_exit();
+	unregister_vsock_transport(&hvs_transport);
 	vmbus_driver_unregister(&hvs_drv);
 }
 

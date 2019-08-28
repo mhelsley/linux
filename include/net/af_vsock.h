@@ -24,6 +24,8 @@ extern spinlock_t vsock_table_lock;
 #define vsock_sk(__sk)    ((struct vsock_sock *)__sk)
 #define sk_vsock(__vsk)   (&(__vsk)->sk)
 
+struct vsock_transport;
+
 struct vsock_sock {
 	/* sk must be the first member. */
 	struct sock sk;
@@ -32,6 +34,8 @@ struct vsock_sock {
 	/* Links for the global tables of bound and connected sockets. */
 	struct list_head bound_table;
 	struct list_head connected_table;
+	struct vsock_transport *transport;
+
 	/* Accessed without the socket lock held. This means it can never be
 	 * modified outsided of socket create or destruct.
 	 */
@@ -89,6 +93,10 @@ struct vsock_transport_send_notify_data {
 };
 
 struct vsock_transport {
+	struct list_head transport_list;
+	struct module *owner;
+	const char *name;
+
 	/* Initialize/tear-down socket. */
 	int (*init)(struct vsock_sock *, struct vsock_sock *);
 	void (*destruct)(struct vsock_sock *);
@@ -157,15 +165,10 @@ struct vsock_transport {
 
 /**** CORE ****/
 
-int __vsock_core_init(const struct vsock_transport *t, struct module *owner);
-static inline int vsock_core_init(const struct vsock_transport *t)
-{
-	return __vsock_core_init(t, THIS_MODULE);
-}
-void vsock_core_exit(void);
+int register_vsock_transport(struct vsock_transport *t);
+void unregister_vsock_transport(struct vsock_transport *t);
 
-/* The transport may downcast this to access transport-specific functions */
-const struct vsock_transport *vsock_core_get_transport(void);
+struct vsock_transport *vm_sockets_default_transport(void);
 
 /**** UTILS ****/
 

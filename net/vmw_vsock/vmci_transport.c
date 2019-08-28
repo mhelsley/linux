@@ -2076,7 +2076,11 @@ static u32 vmci_transport_get_local_cid(void)
 	return vmci_get_context_id();
 }
 
-static const struct vsock_transport vmci_transport = {
+static struct vsock_transport vmci_transport = {
+	.transport_list = LIST_HEAD_INIT(vmci_transport.transport_list),
+	.owner = THIS_MODULE,
+	.name = "vmci",
+
 	.init = vmci_transport_socket_init,
 	.destruct = vmci_transport_destruct,
 	.release = vmci_transport_release,
@@ -2139,7 +2143,7 @@ static int __init vmci_transport_init(void)
 		goto err_destroy_stream_handle;
 	}
 
-	err = vsock_core_init(&vmci_transport);
+	err = register_vsock_transport(&vmci_transport);
 	if (err < 0)
 		goto err_unsubscribe;
 
@@ -2170,7 +2174,7 @@ static void __exit vmci_transport_exit(void)
 		vmci_transport_qp_resumed_sub_id = VMCI_INVALID_ID;
 	}
 
-	vsock_core_exit();
+	unregister_vsock_transport(&vmci_transport);
 }
 module_exit(vmci_transport_exit);
 

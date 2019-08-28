@@ -28,7 +28,7 @@
 
 static const struct virtio_transport *virtio_transport_get_ops(void)
 {
-	const struct vsock_transport *t = vsock_core_get_transport();
+	const struct vsock_transport *t = vm_sockets_default_transport();
 
 	return container_of(t, struct virtio_transport, transport);
 }
@@ -152,8 +152,9 @@ static int virtio_transport_send_pkt_info(struct vsock_sock *vsk,
 	struct virtio_vsock_sock *vvs;
 	struct virtio_vsock_pkt *pkt;
 	u32 pkt_len = info->pkt_len;
+	struct vsock_transport *transport = vsk->transport;
 
-	src_cid = vm_sockets_get_local_cid();
+	src_cid = transport->get_local_cid();
 	src_port = vsk->local_addr.svm_port;
 	if (!info->remote_cid) {
 		dst_cid	= vsk->remote_addr.svm_cid;

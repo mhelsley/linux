@@ -541,6 +541,10 @@ static void virtio_vsock_rx_done(struct virtqueue *vq)
 
 static struct virtio_transport virtio_transport = {
 	.transport = {
+		.transport_list = LIST_HEAD_INIT(virtio_transport.transport.transport_list),
+		.owner = THIS_MODULE,
+		.name = "virtio",
+
 		.get_local_cid            = virtio_transport_get_local_cid,
 
 		.init                     = virtio_transport_do_socket_init,
@@ -775,7 +779,7 @@ static int __init virtio_vsock_init(void)
 	if (!virtio_vsock_workqueue)
 		return -ENOMEM;
 
-	ret = vsock_core_init(&virtio_transport.transport);
+	ret = register_vsock_transport(&virtio_transport.transport);
 	if (ret)
 		goto out_wq;
 
@@ -786,7 +790,7 @@ static int __init virtio_vsock_init(void)
 	return 0;
 
 out_vci:
-	vsock_core_exit();
+	unregister_vsock_transport(&virtio_transport.transport);
 out_wq:
 	destroy_workqueue(virtio_vsock_workqueue);
 	return ret;
@@ -795,7 +799,7 @@ out_wq:
 static void __exit virtio_vsock_exit(void)
 {
 	unregister_virtio_driver(&virtio_vsock_driver);
-	vsock_core_exit();
+	unregister_vsock_transport(&virtio_transport.transport);
 	destroy_workqueue(virtio_vsock_workqueue);
 }
 

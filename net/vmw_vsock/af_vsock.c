@@ -126,15 +126,22 @@ static struct proto vsock_proto = {
  */
 #define VSOCK_DEFAULT_CONNECT_TIMEOUT (2 * HZ)
 
-static const struct vsock_transport *transport;
+static LIST_HEAD(transports);
 static DEFINE_MUTEX(vsock_register_mutex);
 
 /**** EXPORTS ****/
 
 /* Get the ID of the local context.  This is transport dependent. */
+struct vsock_transport *vm_sockets_default_transport(void)
+{
+	return list_first_entry_or_null(&transports, struct vsock_transport,
+					transport_list);
+}
+EXPORT_SYMBOL_GPL(vm_sockets_default_transport);
 
 int vm_sockets_get_local_cid(void)
 {
+	const struct vsock_transport *transport = vm_sockets_default_transport();
 	return transport->get_local_cid();
 }
 EXPORT_SYMBOL_GPL(vm_sockets_get_local_cid);
@@ -418,6 +425,9 @@ static bool vsock_is_pending(struct sock *sk)
 
 static int vsock_send_shutdown(struct sock *sk, int mode)
 {
+	struct vsock_sock *vsk = vsock_sk(sk);
+	struct vsock_transport *transport = vsk->transport;
+
 	return transport->shutdown(vsock_sk(sk), mode);
 }
 
@@ -528,12 +538,15 @@ static int __vsock_bind_stream(struct vsock_sock *vsk,
 static int __vsock_bind_dgram(struct vsock_sock *vsk,
 			      struct sockaddr_vm *addr)
 {
+	struct vsock_transport *transport = vsk->transport;
+
 	return transport->dgram_bind(vsk, addr);
 }
 
 static int __vsock_bind(struct sock *sk, struct sockaddr_vm *addr)
 {
 	struct vsock_sock *vsk = vsock_sk(sk);
+	struct vsock_transport *transport = vsk->transport;
 	u32 cid;
 	int retval;
 
@@ -581,6 +594,7 @@ struct sock *__vsock_create(struct net *net,
 	struct sock *sk;
 	struct vsock_sock *psk;
 	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
 
 	sk = sk_alloc(net, AF_VSOCK, priority, &vsock_proto, kern);
 	if (!sk)
@@ -620,13 +634,27 @@ struct sock *__vsock_create(struct net *net,
 		vsk->trusted = psk->trusted;
 		vsk->owner = get_cred(psk->owner);
 		vsk->connect_timeout = psk->connect_timeout;
+		transport = psk->transport;
 	} else {
 		vsk->trusted = capable(CAP_NET_ADMIN);
 		vsk->owner = get_current_cred();
 		vsk->connect_timeout = VSOCK_DEFAULT_CONNECT_TIMEOUT;
+		/*
+		 * We can't get NULL transport here because we only
+		 * register AF_VSOCK once a first transport has been
+		 * registered. When the last transport unregisters we
+		 * unregister AF_VSOCK.
+		 *
+		 * TODO probably needs to grab the registration mutex,
+		 * get a reference the transport owner, then drop the mutex.
+		 */
+		transport = vm_sockets_default_transport();
 	}
+	__module_get(transport->owner); /* TODO probably not best-practice. Need review from paravirt and netdev folks */
+	vsk->transport = transport;
 
 	if (transport->init(vsk, psk) < 0) {
+		module_put(transport->owner);
 		sk_free(sk);
 		return NULL;
 	}
@@ -644,8 +672,10 @@ static void __vsock_release(struct sock *sk)
 		struct sk_buff *skb;
 		struct sock *pending;
 		struct vsock_sock *vsk;
+		struct vsock_transport *transport;
 
 		vsk = vsock_sk(sk);
+		transport = vsk->transport;
 		pending = NULL;	/* Compiler warning. */
 
 		transport->release(vsk);
@@ -665,12 +695,14 @@ static void __vsock_release(struct sock *sk)
 
 		release_sock(sk);
 		sock_put(sk);
+		module_put(transport->owner);
 	}
 }
 
 static void vsock_sk_destruct(struct sock *sk)
 {
 	struct vsock_sock *vsk = vsock_sk(sk);
+	struct vsock_transport *transport = vsk->transport;
 
 	transport->destruct(vsk);
 
@@ -696,12 +728,16 @@ static int vsock_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 
 s64 vsock_stream_has_data(struct vsock_sock *vsk)
 {
+	struct vsock_transport *transport = vsk->transport;
+
 	return transport->stream_has_data(vsk);
 }
 EXPORT_SYMBOL_GPL(vsock_stream_has_data);
 
 s64 vsock_stream_has_space(struct vsock_sock *vsk)
 {
+	struct vsock_transport *transport = vsk->transport;
+
 	return transport->stream_has_space(vsk);
 }
 EXPORT_SYMBOL_GPL(vsock_stream_has_space);
@@ -832,9 +868,11 @@ static __poll_t vsock_poll(struct file *file, struct socket *sock,
 	struct sock *sk;
 	__poll_t mask;
 	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
 
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 
 	poll_wait(file, sk_sleep(sk), wait);
 	mask = 0;
@@ -946,6 +984,7 @@ static int vsock_dgram_sendmsg(struct socket *sock, struct msghdr *msg,
 	struct sock *sk;
 	struct vsock_sock *vsk;
 	struct sockaddr_vm *remote_addr;
+	struct vsock_transport *transport;
 
 	if (msg->msg_flags & MSG_OOB)
 		return -EOPNOTSUPP;
@@ -954,6 +993,7 @@ static int vsock_dgram_sendmsg(struct socket *sock, struct msghdr *msg,
 	err = 0;
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 
 	lock_sock(sk);
 
@@ -1017,9 +1057,11 @@ static int vsock_dgram_connect(struct socket *sock,
 	struct sock *sk;
 	struct vsock_sock *vsk;
 	struct sockaddr_vm *remote_addr;
+	struct vsock_transport *transport;
 
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 
 	err = vsock_addr_cast(addr, addr_len, &remote_addr);
 	if (err == -EAFNOSUPPORT && remote_addr->svm_family == AF_UNSPEC) {
@@ -1055,7 +1097,14 @@ out:
 static int vsock_dgram_recvmsg(struct socket *sock, struct msghdr *msg,
 			       size_t len, int flags)
 {
-	return transport->dgram_dequeue(vsock_sk(sock->sk), msg, len, flags);
+	struct sock *sk;
+	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
+
+	sk = sock->sk;
+	vsk = vsock_sk(sk);
+	transport = vsk->transport;
+	return transport->dgram_dequeue(vsk, msg, len, flags);
 }
 
 static const struct proto_ops vsock_dgram_ops = {
@@ -1081,6 +1130,9 @@ static const struct proto_ops vsock_dgram_ops = {
 
 static int vsock_transport_cancel_pkt(struct vsock_sock *vsk)
 {
+	struct vsock_transport *transport;
+
+	transport = vsk->transport;
 	if (!transport->cancel_pkt)
 		return -EOPNOTSUPP;
 
@@ -1117,6 +1169,7 @@ static int vsock_stream_connect(struct socket *sock, struct sockaddr *addr,
 	int err;
 	struct sock *sk;
 	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
 	struct sockaddr_vm *remote_addr;
 	long timeout;
 	DEFINE_WAIT(wait);
@@ -1124,6 +1177,7 @@ static int vsock_stream_connect(struct socket *sock, struct sockaddr *addr,
 	err = 0;
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 
 	lock_sock(sk);
 
@@ -1367,6 +1421,7 @@ static int vsock_stream_setsockopt(struct socket *sock,
 	int err;
 	struct sock *sk;
 	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
 	u64 val;
 
 	if (level != AF_VSOCK)
@@ -1387,6 +1442,7 @@ static int vsock_stream_setsockopt(struct socket *sock,
 	err = 0;
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 
 	lock_sock(sk);
 
@@ -1444,6 +1500,7 @@ static int vsock_stream_getsockopt(struct socket *sock,
 	int len;
 	struct sock *sk;
 	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
 	u64 val;
 
 	if (level != AF_VSOCK)
@@ -1467,6 +1524,7 @@ static int vsock_stream_getsockopt(struct socket *sock,
 	err = 0;
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 
 	switch (optname) {
 	case SO_VM_SOCKETS_BUFFER_SIZE:
@@ -1511,6 +1569,7 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 {
 	struct sock *sk;
 	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
 	ssize_t total_written;
 	long timeout;
 	int err;
@@ -1519,6 +1578,7 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 	total_written = 0;
 	err = 0;
 
@@ -1650,6 +1710,7 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 {
 	struct sock *sk;
 	struct vsock_sock *vsk;
+	struct vsock_transport *transport;
 	int err;
 	size_t target;
 	ssize_t copied;
@@ -1660,6 +1721,7 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 
 	sk = sock->sk;
 	vsk = vsock_sk(sk);
+	transport = vsk->transport;
 	err = 0;
 
 	lock_sock(sk);
@@ -1869,6 +1931,7 @@ static const struct net_proto_family vsock_family_ops = {
 static long vsock_dev_do_ioctl(struct file *filp,
 			       unsigned int cmd, void __user *ptr)
 {
+	struct vsock_transport *transport = vm_sockets_default_transport();
 	u32 __user *p = ptr;
 	int retval = 0;
 
@@ -1914,23 +1977,12 @@ static struct miscdevice vsock_device = {
 	.fops		= &vsock_device_ops,
 };
 
-int __vsock_core_init(const struct vsock_transport *t, struct module *owner)
+/* Protected by vsock_register_mutex */
+static int num_transports = 0;
+
+static int __vsock_core_init(void)
 {
-	int err = mutex_lock_interruptible(&vsock_register_mutex);
-
-	if (err)
-		return err;
-
-	if (transport) {
-		err = -EBUSY;
-		goto err_busy;
-	}
-
-	/* Transport must be the owner of the protocol so that it can't
-	 * unload while there are open sockets.
-	 */
-	vsock_proto.owner = owner;
-	transport = t;
+	int err;
 
 	vsock_device.minor = MISC_DYNAMIC_MINOR;
 	err = misc_register(&vsock_device);
@@ -1952,7 +2004,6 @@ int __vsock_core_init(const struct vsock_transport *t, struct module *owner)
 		goto err_unregister_proto;
 	}
 
-	mutex_unlock(&vsock_register_mutex);
 	return 0;
 
 err_unregister_proto:
@@ -1960,37 +2011,52 @@ err_unregister_proto:
 err_deregister_misc:
 	misc_deregister(&vsock_device);
 err_reset_transport:
-	transport = NULL;
-err_busy:
-	mutex_unlock(&vsock_register_mutex);
 	return err;
 }
-EXPORT_SYMBOL_GPL(__vsock_core_init);
 
-void vsock_core_exit(void)
+static void __vsock_core_exit(void)
 {
-	mutex_lock(&vsock_register_mutex);
-
 	misc_deregister(&vsock_device);
 	sock_unregister(AF_VSOCK);
 	proto_unregister(&vsock_proto);
-
-	/* We do not want the assignment below re-ordered. */
-	mb();
-	transport = NULL;
-
-	mutex_unlock(&vsock_register_mutex);
 }
-EXPORT_SYMBOL_GPL(vsock_core_exit);
 
-const struct vsock_transport *vsock_core_get_transport(void)
+int register_vsock_transport(struct vsock_transport *t)
 {
-	/* vsock_register_mutex not taken since only the transport uses this
-	 * function and only while registered.
-	 */
-	return transport;
+	int err = mutex_lock_interruptible(&vsock_register_mutex);
+
+	if (err)
+		goto out;
+	if (!num_transports) {
+		err = __vsock_core_init();
+		if (err)
+			goto out;
+	} else {
+		err = -EBUSY;
+		goto out;
+	}
+	__module_get(t->owner);
+	list_add_tail(&transports, &t->transport_list);
+	num_transports++;
+out:
+	mutex_unlock(&vsock_register_mutex);
+	return err;
 }
-EXPORT_SYMBOL_GPL(vsock_core_get_transport);
+EXPORT_SYMBOL_GPL(register_vsock_transport);
+
+void unregister_vsock_transport(struct vsock_transport *t)
+{
+	mutex_lock(&vsock_register_mutex);
+	if (num_transports == 1)
+		__vsock_core_exit();
+	/* We do not want the list removal below re-ordered. */
+	mb();
+	num_transports--;
+	list_del_init(&t->transport_list);
+	mutex_unlock(&vsock_register_mutex);
+	module_put(t->owner);
+}
+EXPORT_SYMBOL_GPL(unregister_vsock_transport);
 
 static void __exit vsock_exit(void)
 {
