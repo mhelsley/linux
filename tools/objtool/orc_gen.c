@@ -10,7 +10,7 @@
 #include "check.h"
 #include "warn.h"
 
-int create_orc(struct objtool_file *file)
+int orc_init(struct objtool_file *file)
 {
 	struct instruction *insn;
 
@@ -81,9 +81,9 @@ int create_orc(struct objtool_file *file)
 	return 0;
 }
 
-static int create_orc_entry(struct section *u_sec, struct section *ip_relasec,
-				unsigned int idx, struct section *insn_sec,
-				unsigned long insn_off, struct orc_entry *o)
+static int orc_create_entry(struct section *u_sec, struct section *ip_relasec,
+			    unsigned int idx, struct section *insn_sec,
+			    unsigned long insn_off, struct orc_entry *o)
 {
 	struct orc_entry *orc;
 	struct rela *rela;
@@ -116,7 +116,7 @@ static int create_orc_entry(struct section *u_sec, struct section *ip_relasec,
 	return 0;
 }
 
-int create_orc_sections(struct objtool_file *file)
+int orc_create_sections(struct objtool_file *file)
 {
 	struct instruction *insn, *prev_insn;
 	struct section *sec, *u_sec, *ip_relasec;
@@ -182,7 +182,7 @@ int create_orc_sections(struct objtool_file *file)
 			if (!prev_insn || memcmp(&insn->orc, &prev_insn->orc,
 						 sizeof(struct orc_entry))) {
 
-				if (create_orc_entry(u_sec, ip_relasec, idx,
+				if (orc_create_entry(u_sec, ip_relasec, idx,
 						     insn->sec, insn->offset,
 						     &insn->orc))
 					return -1;
@@ -194,7 +194,7 @@ int create_orc_sections(struct objtool_file *file)
 
 		/* section terminator */
 		if (prev_insn) {
-			if (create_orc_entry(u_sec, ip_relasec, idx,
+			if (orc_create_entry(u_sec, ip_relasec, idx,
 					     prev_insn->sec,
 					     prev_insn->offset + prev_insn->len,
 					     &empty))
