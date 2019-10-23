@@ -720,6 +720,14 @@ static int handle_group_alt(struct objtool_file *file,
 	sec_for_each_insn_from(file, insn) {
 		if (insn->offset >= special_alt->orig_off + special_alt->orig_len)
 			break;
+		/* Is insn a jump to an instruction within the alt_group */
+		if (insn->jump_dest && insn->sec == insn->jump_dest->sec &&
+		    (insn->type == INSN_JUMP_CONDITIONAL ||
+		     insn->type == INSN_JUMP_UNCONDITIONAL)) {
+			dest_off = insn->jump_dest->offset;
+			insn->intra_group_jump = special_alt->orig_off <= dest_off &&
+				dest_off < special_alt->orig_off + special_alt->orig_len;
+		}
 
 		insn->alt_group = true;
 		last_orig_insn = insn;
@@ -1847,14 +1855,29 @@ static int validate_sibling_call(struct instruction *insn, struct insn_state *st
 	return validate_call(insn, state);
 }
 
+static int validate_branch_alt_safe(struct objtool_file *file, struct symbol *func,
+				    struct instruction *first, struct insn_state state);
+
+static int validate_branch(struct objtool_file *file, struct symbol *func,
+			   struct instruction *first, struct insn_state state)
+{
+	if (first->alt_group && list_empty(&first->alts)) {
+		WARN_FUNC("don't know how to handle branch to middle of alternative instruction group",
+			  first->sec, first->offset);
+		return 1;
+	}
+
+	return validate_branch_alt_safe(file, func, first, state);
+}
+
 /*
  * Follow the branch starting at the given instruction, and recursively follow
  * any other branches (jumps).  Meanwhile, track the frame pointer state at
  * each instruction and validate all the rules described in
  * tools/objtool/Documentation/stack-validation.txt.
  */
-static int validate_branch(struct objtool_file *file, struct symbol *func,
-			   struct instruction *first, struct insn_state state)
+static int validate_branch_alt_safe(struct objtool_file *file, struct symbol *func,
+				    struct instruction *first, struct insn_state state)
 {
 	struct alternative *alt;
 	struct instruction *insn, *next_insn;
@@ -1864,12 +1887,6 @@ static int validate_branch(struct objtool_file *file, struct symbol *func,
 
 	insn = first;
 	sec = insn->sec;
-
-	if (insn->alt_group && list_empty(&insn->alts)) {
-		WARN_FUNC("don't know how to handle branch to middle of alternative instruction group",
-			  sec, insn->offset);
-		return 1;
-	}
 
 	while (1) {
 		next_insn = next_insn_same_sec(file, insn);
@@ -2017,8 +2034,15 @@ static int validate_branch(struct objtool_file *file, struct symbol *func,
 					return ret;
 
 			} else if (insn->jump_dest) {
-				ret = validate_branch(file, func,
-						      insn->jump_dest, state);
+				if (insn->intra_group_jump)
+					ret = validate_branch_alt_safe(file,
+								       func,
+								       insn->jump_dest,
+								       state);
+				else
+					ret = validate_branch(file, func,
+							      insn->jump_dest,
+							      state);
 				if (ret) {
 					if (backtrace)
 						BT_FUNC("(branch)", insn);

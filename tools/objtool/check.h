@@ -46,6 +46,7 @@ struct instruction {
 	struct stack_op stack_op;
 	struct insn_state state;
 	struct orc_entry orc;
+	bool intra_group_jump;
 };
 
 struct objtool_file {
