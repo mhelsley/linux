@@ -60,13 +60,17 @@ static struct symbol *find_symbol_by_index(struct elf *elf, unsigned int idx)
 struct symbol *find_symbol_by_offset(struct section *sec, unsigned long offset)
 {
 	struct symbol *sym;
+	struct symbol *res = NULL;
 
 	list_for_each_entry(sym, &sec->symbol_list, list)
 		if (sym->type != STT_SECTION &&
-		    sym->offset == offset)
-			return sym;
+		    sym->offset == offset) {
+			if (sym->type != STT_NOTYPE)
+				return sym;
+			res = sym;
+		}
 
-	return NULL;
+	return res;
 }
 
 struct symbol *find_symbol_by_name(struct elf *elf, const char *name)
