@@ -15,13 +15,8 @@
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _OBJTOOL_CFI_H
-#define _OBJTOOL_CFI_H
-
-#define CFI_UNDEFINED		-1
-#define CFI_CFA			-2
-#define CFI_SP_INDIRECT		-3
-#define CFI_BP_INDIRECT		-4
+#ifndef _OBJTOOL_CFI_REGS_H
+#define _OBJTOOL_CFI_REGS_H
 
 #define CFI_R0			0
 #define CFI_R1			1
@@ -61,14 +56,4 @@
 
 #define CFI_NUM_REGS		32
 
-struct cfi_reg {
-	int base;
-	int offset;
-};
-
-struct cfi_state {
-	struct cfi_reg cfa;
-	struct cfi_reg regs[CFI_NUM_REGS];
-};
-
-#endif /* _OBJTOOL_CFI_H */
+#endif /* _OBJTOOL_CFI_REGS_H */
