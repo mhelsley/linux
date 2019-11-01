@@ -93,12 +93,8 @@ void arch_initial_func_cfi_state(struct cfi_state *state)
 	}
 
 	/* initial CFA (call frame address) */
-	state->cfa.base = CFI_CFA;
+	state->cfa.base = CFI_SP;
 	state->cfa.offset = 0;
-
-	/* initial RA (return address) */
-	state->regs[CFI_LR].base = CFI_CFA;
-	state->regs[CFI_LR].offset = -8;
 }
 
 unsigned long arch_dest_rela_offset(int addend)
@@ -1664,7 +1660,7 @@ int arm_decode_ld_st_regs_pair_off(u32 instr, enum insn_type *type,
 
 	*immediate = (SIGN_EXTEND(imm7, 7)) << scale;
 
-	if (rn != CFI_SP) {
+	if (rn != CFI_SP && rn != CFI_BP) {
 		*type = INSN_OTHER;
 		return 0;
 	}
@@ -1680,25 +1676,47 @@ int arm_decode_ld_st_regs_pair_off(u32 instr, enum insn_type *type,
 	case 11:
 		/* load */
 		op->src.type = OP_SRC_REG_INDIRECT;
-		op->src.reg = CFI_SP;
-		op->src.offset = 0;
+		op->src.reg = rn;
+		op->src.offset = *immediate;
 		op->dest.type = OP_DEST_REG;
 		op->dest.reg = rt;
 		op->dest.offset = 0;
-		op->extra.used = 1;
-		op->extra.reg = rt2;
-		op->extra.offset = 8;
+		{
+			struct stack_op *extra;
+
+			extra = malloc(sizeof(*extra));
+			extra->src.type = OP_SRC_REG_INDIRECT;
+			extra->src.reg = rn;
+			extra->src.offset = (int) *immediate + 8;
+			extra->dest.type = OP_DEST_REG;
+			extra->dest.reg = rt2;
+			extra->dest.offset = 0;
+			extra->next = NULL;
+
+			op->next = extra;
+		}
 		break;
 	default:
 		op->dest.type = OP_DEST_REG_INDIRECT;
-		op->dest.reg = CFI_SP;
-		op->dest.offset = 8;
+		op->dest.reg = rn;
+		op->dest.offset = (int) *immediate + 8;
 		op->src.type = OP_SRC_REG;
 		op->src.reg = rt2;
 		op->src.offset = 0;
-		op->extra.used = 1;
-		op->extra.reg = rt;
-		op->extra.offset = 0;
+		{
+			struct stack_op *extra;
+
+			extra = malloc(sizeof(*extra));
+			extra->dest.type = OP_DEST_REG_INDIRECT;
+			extra->dest.reg = rn;
+			extra->dest.offset = *immediate;
+			extra->src.type = OP_SRC_REG;
+			extra->src.reg = rt;
+			extra->src.offset = 0;
+			extra->next = NULL;
+
+			op->next = extra;
+		}
 		/* store */
 	}
 	return 0;
@@ -1709,19 +1727,45 @@ int arm_decode_ld_st_regs_pair_post(u32 instr, enum insn_type *type,
 				    struct stack_op *op)
 {
 	int ret = 0;
+	unsigned int base_reg;
+	bool base_is_src;
+	struct stack_op *extra;
 
 	ret = arm_decode_ld_st_regs_pair_off(instr, type, immediate, op);
 	if (ret < 0 || *type == INSN_OTHER)
 		return ret;
+
 	if (op->dest.type == OP_DEST_REG_INDIRECT) {
-		op->dest.type = OP_DEST_PUSH;
-		op->dest.reg = CFI_SP;
+		base_reg = op->dest.reg;
+		base_is_src = false;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		base_is_src = true;
+	} else {
+		WARN("Unexpected base type");
+		return -1;
 	}
 
-	if (op->src.type == OP_SRC_REG_INDIRECT) {
-		op->src.type = OP_SRC_POP;
-		op->src.reg = CFI_SP;
+	extra = malloc(sizeof(*extra));
+	extra->dest.type = OP_DEST_REG;
+	extra->dest.reg = base_reg;
+	extra->src.reg = base_reg;
+	extra->src.type = OP_SRC_ADD;
+	extra->src.offset = (int) *immediate;
+	extra->next = NULL;
+
+	/* Add post increment of base */
+	while (1) {
+		if (!base_is_src)
+			op->dest.offset -= extra->src.offset;
+		else
+			op->src.offset -= extra->src.offset;
+
+		if (!op->next)
+			break;
+		op = op->next;
 	}
+	op->next = extra;
 
 	return ret;
 }
@@ -1730,7 +1774,45 @@ int arm_decode_ld_st_regs_pair_pre(u32 instr, enum insn_type *type,
 				   unsigned long *immediate,
 				   struct stack_op *op)
 {
-	return arm_decode_ld_st_regs_pair_post(instr, type, immediate, op);
+	int ret = 0;
+	unsigned int base_reg;
+	bool base_is_src;
+	struct stack_op *extra;
+
+	ret = arm_decode_ld_st_regs_pair_off(instr, type, immediate, op);
+	if (ret < 0 || *type == INSN_OTHER)
+		return ret;
+
+	if (op->dest.type == OP_DEST_REG_INDIRECT) {
+		base_reg = op->dest.reg;
+		base_is_src = false;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		base_is_src = true;
+	} else {
+		WARN("Unexpected base type");
+		return -1;
+	}
+
+	extra = malloc(sizeof(*extra));
+	*extra = *op;
+	op->dest.type = OP_DEST_REG;
+	op->dest.reg = base_reg;
+	op->src.type = OP_SRC_ADD;
+	op->src.reg = base_reg;
+	op->src.offset = (int) *immediate;
+	op->next = extra;
+
+	/* Adapt offsets */
+	while (extra) {
+		if (!base_is_src)
+			extra->dest.offset -= op->src.offset;
+		else
+			extra->src.offset -= op->src.offset;
+
+		extra = extra->next;
+	}
+	return 0;
 }
 
 int arm_decode_ld_st_regs_unsc_imm(u32 instr, enum insn_type *type,
@@ -1850,7 +1932,7 @@ int arm_decode_ld_st_regs_unsigned(u32 instr, enum insn_type *type,
 	rn = (instr >> 5) & ONES(5);
 	rt = instr & ONES(5);
 
-	if (rn != CFI_SP || decode_field == 26) {
+	if ((rn != CFI_SP && rn != CFI_BP) || decode_field == 26) {
 		*type = INSN_OTHER;
 		return 0;
 	}
@@ -1873,7 +1955,7 @@ int arm_decode_ld_st_regs_unsigned(u32 instr, enum insn_type *type,
 	case 25:
 		/* load */
 		op->src.type = OP_SRC_REG_INDIRECT;
-		op->src.reg = CFI_SP;
+		op->src.reg = rn;
 		op->src.offset = imm12;
 		op->dest.type = OP_DEST_REG;
 		op->dest.reg = rt;
@@ -1881,7 +1963,7 @@ int arm_decode_ld_st_regs_unsigned(u32 instr, enum insn_type *type,
 		break;
 	default: /* store */
 		op->dest.type = OP_DEST_REG_INDIRECT;
-		op->dest.reg = CFI_SP;
+		op->dest.reg = rn;
 		op->dest.offset = imm12;
 		op->src.type = OP_DEST_REG;
 		op->src.reg = rt;
@@ -1897,6 +1979,8 @@ int arm_decode_ld_st_imm_post(u32 instr, enum insn_type *type,
 {
 	unsigned char size = 0, V = 0, opc = 0;
 	unsigned char decode_field = 0;
+	struct stack_op *post_inc;
+	int base_reg;
 	u32 imm9 = 0;
 	int ret = 0;
 
@@ -1916,16 +2000,24 @@ int arm_decode_ld_st_imm_post(u32 instr, enum insn_type *type,
 		return ret;
 
 	if (op->dest.type == OP_DEST_REG_INDIRECT) {
-		op->dest.type = OP_DEST_PUSH;
-		op->dest.reg = CFI_SP;
-		op->dest.offset = SIGN_EXTEND(imm9, 9);
+		base_reg = op->dest.reg;
+		op->dest.offset = 0;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		op->src.offset = 0;
+	} else {
+		WARN("Cannot find stack op base");
+		return -1;
 	}
 
-	if (op->src.type == OP_SRC_REG_INDIRECT) {
-		op->src.type = OP_SRC_POP;
-		op->src.reg = CFI_SP;
-		op->src.offset = SIGN_EXTEND(imm9, 9);
-	}
+	post_inc = malloc(sizeof(*post_inc));
+	post_inc->dest.type = OP_DEST_REG;
+	post_inc->dest.reg = base_reg;
+	post_inc->src.reg = base_reg;
+	post_inc->src.type = OP_SRC_ADD;
+	post_inc->src.offset = SIGN_EXTEND(imm9, 9);
+	post_inc->next = NULL;
+	op->next = post_inc;
 
 	return 0;
 }
@@ -1933,7 +2025,48 @@ int arm_decode_ld_st_imm_post(u32 instr, enum insn_type *type,
 int arm_decode_ld_st_imm_pre(u32 instr, enum insn_type *type,
 			     unsigned long *immediate, struct stack_op *op)
 {
-	return arm_decode_ld_st_imm_post(instr, type, immediate, op);
+	unsigned char size = 0, V = 0, opc = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *pre_inc;
+	int base_reg;
+	u32 imm9 = 0;
+	int ret = 0;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	opc = (instr >> 22) & ONES(2);
+
+	imm9 = (instr >> 12) & ONES(9);
+
+	decode_field = (size << 2) | (V << 2) | opc;
+
+	if (decode_field == 0b11010)
+		return arm_decode_unknown(instr, type, immediate, op);
+
+	ret = arm_decode_ld_st_regs_unsigned(instr, type, immediate, op);
+	if (ret < 0 || *type == INSN_OTHER)
+		return ret;
+
+	if (op->dest.type == OP_DEST_REG_INDIRECT) {
+		base_reg = op->dest.reg;
+		op->dest.offset = 0;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		op->src.offset = 0;
+	} else {
+		WARN("Cannot find stack op base");
+		return -1;
+	}
+
+	pre_inc = malloc(sizeof(*pre_inc));
+	pre_inc->dest.type = OP_DEST_REG;
+	pre_inc->dest.reg = base_reg;
+	pre_inc->src.reg = base_reg;
+	pre_inc->src.type = OP_SRC_ADD;
+	pre_inc->src.offset = SIGN_EXTEND(imm9, 9);
+	pre_inc->next = op;
+
+	return 0;
 }
 
 #define LD_UNPR_UNALLOC_1 0b10011
