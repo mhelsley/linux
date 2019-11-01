@@ -22,4 +22,6 @@
 #define CFI_RA			16
 #define CFI_NUM_REGS		17
 
+#define CFI_BP_FRAME_OFFSET	-16
+
 #endif /* _OBJTOOL_CFI_REGS_H */

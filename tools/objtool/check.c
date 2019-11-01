@@ -1244,7 +1244,7 @@ static bool has_modified_stack_frame(struct insn_state *state)
 static bool has_valid_stack_frame(struct insn_state *state)
 {
 	if (state->cfa.base == CFI_BP && state->regs[CFI_BP].base == CFI_CFA &&
-	    state->regs[CFI_BP].offset == -16)
+	    state->regs[CFI_BP].offset + state->cfa.offset == CFI_BP_FRAME_OFFSET)
 		return true;
 
 	if (state->drap && state->regs[CFI_BP].base == CFI_BP)
@@ -1458,6 +1458,18 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 				break;
 			}
 
+			if (op->src.reg == CFI_SP && cfa->base == CFI_SP &&
+			    op->dest.reg == CFI_BP &&
+			    regs[CFI_BP].base == CFI_CFA &&
+			    regs[CFI_BP].offset == -cfa->offset + op->src.offset) {
+
+				/* lea disp(%rsp), %rbp */
+				cfa->base = CFI_BP;
+				cfa->offset -= op->src.offset;
+				state->bp_scratch = false;
+				break;
+			}
+
 			if (op->src.reg == CFI_SP && cfa->base == CFI_SP) {
 
 				/* drap: lea disp(%rsp), %drap */
@@ -1559,6 +1571,10 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 				cfa->base = state->drap_reg;
 				cfa->offset = 0;
 				state->drap_offset = -1;
+			} else if (!state->drap && op->src.reg == CFI_SP &&
+				op->dest.reg == cfa->base) {
+				cfa->base = CFI_SP;
+				cfa->offset += op->src.offset;
 			}
 
 			if (state->drap && op->src.reg == CFI_BP &&
