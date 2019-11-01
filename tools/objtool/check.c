@@ -1364,6 +1364,7 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 	if (state->type == ORC_TYPE_REGS || state->type == ORC_TYPE_REGS_IRET)
 		return update_insn_state_regs(insn, state);
 
+process_stack_op:
 	switch (op->dest.type) {
 
 	case OP_DEST_REG:
@@ -1710,6 +1711,11 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 		WARN_FUNC("unknown stack-related instruction",
 			  insn->sec, insn->offset);
 		return -1;
+	}
+
+	if (op->next) {
+		op = op->next;
+		goto process_stack_op;
 	}
 
 	return 0;
