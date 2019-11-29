@@ -80,4 +80,8 @@ struct instruction *next_insn_same_sec(struct objtool_file *file,
 
 #define C_JUMP_TABLE_SECTION ".rodata..c_jump_table"
 
+int get_insn_dests_from_rela_list_table(struct objtool_file *file,
+					struct instruction *insn,
+					struct rela *table);
+
 #endif /* _CHECK_H */

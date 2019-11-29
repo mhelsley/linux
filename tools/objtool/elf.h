@@ -63,6 +63,7 @@ struct rela {
 	unsigned long offset;
 	int addend;
 	bool jump_table_start;
+	bool c_jump_table;
 };
 
 struct elf {
