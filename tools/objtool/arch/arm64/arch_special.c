@@ -187,7 +187,13 @@ static int add_arm64_jump_table_dests(struct objtool_file *file,
 int arch_add_jump_table_dests(struct objtool_file *file,
 			      struct instruction *insn)
 {
-	return add_arm64_jump_table_dests(file, insn);
+	struct rela *table = insn->jump_table;
+
+	if (table->c_jump_table)
+		return get_insn_dests_from_rela_list_table(file, insn,
+							   table);
+	else
+		return add_arm64_jump_table_dests(file, insn);
 }
 
 static struct rela *find_swt_info_jump_rela(struct section *swt_info_sec,
@@ -256,6 +262,22 @@ struct rela *arch_find_switch_table(struct objtool_file *file,
 				WARN_FUNC("missing relocation in objtool data",
 					  info_rela->sec, info_rela->offset);
 		}
+	}
+
+	/* Support C jump tables */
+	if (!res) {
+		struct rela *text_rela;
+
+		text_rela = find_rela_by_dest_range(insn->sec, insn->offset,
+						    insn->len);
+		if (!text_rela || text_rela->sym->type != STT_SECTION ||
+		    !text_rela->sym->sec->rodata ||
+		    strcmp(text_rela->sym->sec->name, C_JUMP_TABLE_SECTION))
+				return NULL;
+
+		res = find_rela_by_dest(text_rela->sym->sec, text_rela->addend);
+		if (res)
+			res->c_jump_table = true;
 	}
 
 	return res;
