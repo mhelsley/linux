@@ -5,6 +5,10 @@
 
 #include "../../../arch.h"
 
+#define INSN_RESERVED	0b0000
+#define INSN_UNKNOWN	0b0001
+#define INSN_UNALLOC	0b0011
+
 #define NR_INSN_CLASS	16
 #define INSN_CLASS(opcode)	(((opcode) >> 25) & (NR_INSN_CLASS - 1))
 
@@ -12,4 +16,7 @@ typedef int (*arm_decode_class)(u32 instr, enum insn_type *type,
 				unsigned long *immediate,
 				struct list_head *ops_list);
 
+/* arm64 instruction classes */
+int arm_decode_unknown(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list);
 #endif /* _ARM_INSN_DECODE_H */

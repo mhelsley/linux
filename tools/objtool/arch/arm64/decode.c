@@ -78,7 +78,9 @@ static int is_arm64(struct elf *elf)
  *				 struct list_head *ops_list);
  */
 static arm_decode_class aarch64_insn_class_decode_table[NR_INSN_CLASS] = {
-	NULL,
+	[INSN_RESERVED]			= arm_decode_unknown,
+	[INSN_UNKNOWN]			= arm_decode_unknown,
+	[INSN_UNALLOC]			= arm_decode_unknown,
 };
 
 /*
@@ -124,4 +126,22 @@ int arch_decode_instruction(struct elf *elf, struct section *sec,
 	if (res)
 		WARN_FUNC("Unsupported instruction", sec, offset);
 	return res;
+}
+
+int arm_decode_unknown(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list)
+{
+	/*
+	 * There are a few reasons we might have non-valid opcodes in
+	 * code sections:
+	 * - For load literal, assembler can generate the data to be loaded in
+	 *   the code section
+	 * - Compiler/assembler can generate zeroes to pad function that do not
+	 *   end on 8-byte alignment
+	 * - Hand written assembly code might contain constants in the code
+	 *   section
+	 */
+	*type = INSN_INVALID;
+
+	return 0;
 }
