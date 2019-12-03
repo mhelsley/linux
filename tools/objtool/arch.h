@@ -28,6 +28,7 @@ enum insn_type {
 	INSN_STD,
 	INSN_CLD,
 	INSN_OTHER,
+	INSN_INVALID,
 };
 
 enum op_dest_type {
