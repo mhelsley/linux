@@ -81,6 +81,7 @@ static arm_decode_class aarch64_insn_class_decode_table[NR_INSN_CLASS] = {
 	[INSN_RESERVED]			= arm_decode_unknown,
 	[INSN_UNKNOWN]			= arm_decode_unknown,
 	[INSN_UNALLOC]			= arm_decode_unknown,
+	[0b1000 ... INSN_DP_IMM]	= arm_decode_dp_imm,
 };
 
 /*
@@ -144,4 +145,107 @@ int arm_decode_unknown(u32 instr, enum insn_type *type,
 	*type = INSN_INVALID;
 
 	return 0;
+}
+
+#define NR_DP_IMM_SUBCLASS	8
+#define INSN_DP_IMM_SUBCLASS(opcode)			\
+	(((opcode) >> 23) & (NR_DP_IMM_SUBCLASS - 1))
+
+static arm_decode_class aarch64_insn_dp_imm_decode_table[NR_DP_IMM_SUBCLASS] = {
+	[0 ... INSN_PCREL]	= arm_decode_pcrel,
+	[INSN_MOVE_WIDE]	= arm_decode_move_wide,
+	[INSN_BITFIELD]		= arm_decode_bitfield,
+	[INSN_EXTRACT]		= arm_decode_extract,
+};
+
+int arm_decode_dp_imm(u32 instr, enum insn_type *type,
+		      unsigned long *immediate, struct list_head *ops_list)
+{
+	arm_decode_class decode_fun;
+
+	decode_fun = aarch64_insn_dp_imm_decode_table[INSN_DP_IMM_SUBCLASS(instr)];
+	if (!decode_fun)
+		return -1;
+	return decode_fun(instr, type, immediate, ops_list);
+}
+
+int arm_decode_pcrel(u32 instr, enum insn_type *type,
+		     unsigned long *immediate, struct list_head *ops_list)
+{
+	unsigned char page = 0;
+	u32 immhi = 0, immlo = 0;
+
+	page = EXTRACT_BIT(instr, 31);
+	immhi = (instr >> 5) & ONES(19);
+	immlo = (instr >> 29) & ONES(2);
+
+	*immediate = SIGN_EXTEND((immhi << 2) | immlo, 21);
+
+	if (page)
+		*immediate = SIGN_EXTEND(*immediate << 12, 33);
+
+	*type = INSN_OTHER;
+
+	return 0;
+}
+
+int arm_decode_move_wide(u32 instr, enum insn_type *type,
+			 unsigned long *immediate, struct list_head *ops_list)
+{
+	u32 imm16 = 0;
+	unsigned char hw = 0, opc = 0, sf = 0;
+
+	sf = EXTRACT_BIT(instr, 31);
+	opc = (instr >> 29) & ONES(2);
+	hw = (instr >> 21) & ONES(2);
+	imm16 = (instr >> 5) & ONES(16);
+
+	if ((sf == 0 && (hw & 0x2)) || opc == 0x1)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	*type = INSN_OTHER;
+	*immediate = imm16;
+
+	return 0;
+}
+
+int arm_decode_bitfield(u32 instr, enum insn_type *type,
+			unsigned long *immediate, struct list_head *ops_list)
+{
+	unsigned char sf = 0, opc = 0, N = 0;
+
+	sf = EXTRACT_BIT(instr, 31);
+	opc = (instr >> 29) & ONES(2);
+	N = EXTRACT_BIT(instr, 22);
+
+	if (opc == 0x3 || sf != N)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	*type = INSN_OTHER;
+
+	return 0;
+}
+
+int arm_decode_extract(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list)
+{
+	unsigned char sf = 0, op21 = 0, N = 0, o0 = 0;
+	unsigned char imms = 0;
+	unsigned char decode_field = 0;
+
+	sf = EXTRACT_BIT(instr, 31);
+	op21 = (instr >> 29) & ONES(2);
+	N = EXTRACT_BIT(instr, 22);
+	o0 = EXTRACT_BIT(instr, 21);
+	imms = (instr >> 10) & ONES(6);
+
+	decode_field = (sf << 4) | (op21 << 2) | (N << 1) | o0;
+	*type = INSN_OTHER;
+	*immediate = imms;
+
+	if ((decode_field == 0 && !EXTRACT_BIT(imms, 5)) ||
+	    decode_field == 0b10010)
+		return 0;
+
+	return arm_decode_unknown(instr, type, immediate, ops_list);
 }
