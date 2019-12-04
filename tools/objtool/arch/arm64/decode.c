@@ -13,6 +13,11 @@
 #include "../../elf.h"
 #include "../../warn.h"
 
+static bool stack_related_reg(int reg)
+{
+	return reg == CFI_SP || reg == CFI_BP;
+}
+
 bool arch_callee_saved_reg(unsigned char reg)
 {
 	switch (reg) {
@@ -153,6 +158,8 @@ int arm_decode_unknown(u32 instr, enum insn_type *type,
 
 static arm_decode_class aarch64_insn_dp_imm_decode_table[NR_DP_IMM_SUBCLASS] = {
 	[0 ... INSN_PCREL]	= arm_decode_pcrel,
+	[INSN_ADD_SUB]		= arm_decode_add_sub,
+	[INSN_ADD_TAG]		= arm_decode_add_sub_tags,
 	[INSN_MOVE_WIDE]	= arm_decode_move_wide,
 	[INSN_BITFIELD]		= arm_decode_bitfield,
 	[INSN_EXTRACT]		= arm_decode_extract,
@@ -185,6 +192,83 @@ int arm_decode_pcrel(u32 instr, enum insn_type *type,
 		*immediate = SIGN_EXTEND(*immediate << 12, 33);
 
 	*type = INSN_OTHER;
+
+	return 0;
+}
+
+int arm_decode_add_sub(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list)
+{
+	unsigned long imm12 = 0, imm = 0;
+	unsigned char sf = 0, sh = 0, S = 0, op_bit = 0;
+	unsigned char rn = 0, rd = 0;
+
+	S = EXTRACT_BIT(instr, 29);
+	op_bit = EXTRACT_BIT(instr, 30);
+	sf = EXTRACT_BIT(instr, 31);
+	sh = EXTRACT_BIT(instr, 22);
+	rd = instr & ONES(5);
+	rn = (instr >> 5) & ONES(5);
+	imm12 = (instr >> 10) & ONES(12);
+	imm = ZERO_EXTEND(imm12 << (sh * 12), (sf + 1) * 32);
+
+	*type = INSN_OTHER;
+
+	if (rd == CFI_BP || (!S && rd == CFI_SP) || stack_related_reg(rn)) {
+		struct stack_op *op;
+
+		*type = INSN_STACK;
+
+		op = calloc(1, sizeof(*op));
+		list_add_tail(&op->list, ops_list);
+
+		op->dest.type = OP_DEST_REG;
+		op->dest.offset = 0;
+		op->dest.reg = rd;
+		op->src.type = OP_SRC_ADD;
+		op->src.offset = op_bit ? -1 * imm : imm;
+		op->src.reg = rn;
+	}
+	return 0;
+}
+
+int arm_decode_add_sub_tags(u32 instr, enum insn_type *type,
+			    unsigned long *immediate,
+			    struct list_head *ops_list)
+{
+	unsigned char decode_field = 0, rn = 0, rd = 0, uimm6 = 0;
+
+	decode_field = (instr >> 29) & ONES(3);
+	rd = instr & ONES(5);
+	rn = (instr >> 5) & ONES(5);
+	uimm6 = (instr >> 16) & ONES(6);
+
+	*immediate = uimm6;
+	*type = INSN_OTHER;
+
+#define ADDG_DECODE	4
+#define SUBG_DECODE	5
+	if (decode_field != ADDG_DECODE && decode_field != SUBG_DECODE)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+#undef ADDG_DECODE
+#undef SUBG_DECODE
+
+	if (stack_related_reg(rd)) {
+		struct stack_op *op;
+
+		*type = INSN_STACK;
+
+		op = calloc(1, sizeof(*op));
+		list_add_tail(&op->list, ops_list);
+
+		op->dest.type = OP_DEST_REG;
+		op->dest.offset = 0;
+		op->dest.reg = rd;
+		op->src.type = OP_SRC_ADD;
+		op->src.offset = 0;
+		op->src.reg = rn;
+	}
 
 	return 0;
 }
