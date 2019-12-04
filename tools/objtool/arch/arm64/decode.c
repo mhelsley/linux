@@ -160,6 +160,7 @@ static arm_decode_class aarch64_insn_dp_imm_decode_table[NR_DP_IMM_SUBCLASS] = {
 	[0 ... INSN_PCREL]	= arm_decode_pcrel,
 	[INSN_ADD_SUB]		= arm_decode_add_sub,
 	[INSN_ADD_TAG]		= arm_decode_add_sub_tags,
+	[INSN_LOGICAL]		= arm_decode_logical,
 	[INSN_MOVE_WIDE]	= arm_decode_move_wide,
 	[INSN_BITFIELD]		= arm_decode_bitfield,
 	[INSN_EXTRACT]		= arm_decode_extract,
@@ -269,6 +270,63 @@ int arm_decode_add_sub_tags(u32 instr, enum insn_type *type,
 		op->src.offset = 0;
 		op->src.reg = rn;
 	}
+
+	return 0;
+}
+
+int arm_decode_logical(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list)
+{
+	unsigned char sf = 0, opc = 0, N = 0;
+	unsigned char imms = 0, immr = 0, rn = 0, rd = 0;
+	struct stack_op *op;
+
+	rd = instr & ONES(5);
+	rn = (instr >> 5) & ONES(5);
+
+	imms = (instr >> 10) & ONES(6);
+	immr = (instr >> 16) & ONES(6);
+
+	N = EXTRACT_BIT(instr, 22);
+	opc = (instr >> 29) & ONES(2);
+	sf = EXTRACT_BIT(instr, 31);
+
+	if (N == 1 && sf == 0)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	*type = INSN_OTHER;
+	*immediate = (decode_bit_masks(N, imms, immr, true) >> 64);
+
+	if (opc & 1)
+		return 0;
+
+	if (rd != CFI_SP)
+		return 0;
+
+	*type = INSN_STACK;
+
+	if (rn != CFI_SP) {
+		op = calloc(1, sizeof(*op));
+		list_add_tail(&op->list, ops_list);
+
+		op->dest.type = OP_DEST_REG;
+		op->dest.offset = 0;
+		op->dest.reg = rd;
+		op->src.type = OP_SRC_REG;
+		op->src.offset = 0;
+		op->src.reg = rn;
+	}
+
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+
+	op->dest.type = OP_DEST_REG;
+	op->dest.offset = 0;
+	op->dest.reg = rd;
+
+	op->src.type = OP_SRC_AND;
+	op->src.offset = 0;
+	op->src.reg = rd;
 
 	return 0;
 }
