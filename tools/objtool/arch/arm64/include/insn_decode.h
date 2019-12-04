@@ -16,6 +16,7 @@
 #define INSN_PCREL	0b001	//0b00x
 #define INSN_ADD_SUB	0b010
 #define INSN_ADD_TAG	0b011
+#define INSN_LOGICAL	0b100
 #define INSN_MOVE_WIDE	0b101
 #define INSN_BITFIELD	0b110
 #define INSN_EXTRACT	0b111
@@ -38,6 +39,8 @@ int arm_decode_add_sub(u32 instr, enum insn_type *type,
 int arm_decode_add_sub_tags(u32 instr, enum insn_type *type,
 			    unsigned long *immediate,
 			    struct list_head *ops_list);
+int arm_decode_logical(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_move_wide(u32 instr, enum insn_type *type,
 			 unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_bitfield(u32 instr, enum insn_type *type,
