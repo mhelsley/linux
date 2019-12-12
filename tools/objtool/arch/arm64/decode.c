@@ -87,6 +87,7 @@ static arm_decode_class aarch64_insn_class_decode_table[NR_INSN_CLASS] = {
 	[INSN_UNKNOWN]			= arm_decode_unknown,
 	[INSN_UNALLOC]			= arm_decode_unknown,
 	[0b1000 ... INSN_DP_IMM]	= arm_decode_dp_imm,
+	[0b1010 ... INSN_SYS_BRANCH]	= arm_decode_br_sys,
 };
 
 /*
@@ -390,4 +391,98 @@ int arm_decode_extract(u32 instr, enum insn_type *type,
 		return 0;
 
 	return arm_decode_unknown(instr, type, immediate, ops_list);
+}
+
+static struct aarch64_insn_decoder br_sys_decoder[] = {
+	{
+		.mask = 0b1111111111111111111111,
+		.value = 0b1100100000011001011111,
+		.decode_func = arm_decode_hints,
+	},
+	{
+		.mask = 0b1111111111111111100000,
+		.value = 0b1100100000011001100000,
+		.decode_func = arm_decode_barriers,
+	},
+	{
+		.mask = 0b1111111111000111100000,
+		.value = 0b1100100000000010000000,
+		.decode_func = arm_decode_pstate,
+	},
+	{
+		.mask = 0b1111111011000000000000,
+		.value = 0b1100100001000000000000,
+		.decode_func = arm_decode_system_insn,
+	},
+	{
+		.mask = 0b1111111010000000000000,
+		.value = 0b1100100010000000000000,
+		.decode_func = arm_decode_system_regs,
+	},
+};
+
+int arm_decode_br_sys(u32 instr, enum insn_type *type,
+		      unsigned long *immediate, struct list_head *ops_list)
+{
+	u32 decode_field = 0, op1 = 0;
+	unsigned char op0 = 0, op2 = 0;
+	int i = 0;
+
+	op0 = (instr >> 29) & ONES(3);
+	op1 = (instr >> 12) & ONES(14);
+	op2 = instr & ONES(5);
+
+	decode_field = op0;
+	decode_field = (decode_field << 19) | (op1 << 5) | op2;
+
+	for (i = 0; i < ARRAY_SIZE(br_sys_decoder); i++) {
+		if ((decode_field & br_sys_decoder[i].mask) ==
+		    br_sys_decoder[i].value) {
+			return br_sys_decoder[i].decode_func(instr,
+							     type,
+							     immediate,
+							     ops_list);
+		}
+	}
+
+	return arm_decode_unknown(instr, type, immediate, ops_list);
+}
+
+int arm_decode_hints(u32 instr, enum insn_type *type,
+		     unsigned long *immediate, struct list_head *ops_list)
+{
+	*type = INSN_NOP;
+	return 0;
+}
+
+int arm_decode_barriers(u32 instr, enum insn_type *type,
+			unsigned long *immediate, struct list_head *ops_list)
+{
+	/* TODO:check unallocated */
+	*type = INSN_OTHER;
+	return 0;
+}
+
+int arm_decode_pstate(u32 instr, enum insn_type *type,
+		      unsigned long *immediate, struct list_head *ops_list)
+{
+	/* TODO:check unallocated */
+	*type = INSN_OTHER;
+	return 0;
+}
+
+int arm_decode_system_insn(u32 instr, enum insn_type *type,
+			   unsigned long *immediate, struct list_head *ops_list)
+{
+	/* TODO:check unallocated */
+	*type = INSN_OTHER;
+	return 0;
+}
+
+int arm_decode_system_regs(u32 instr, enum insn_type *type,
+			   unsigned long *immediate, struct list_head *ops_list)
+{
+	/* TODO:check unallocated */
+	*type = INSN_OTHER;
+	return 0;
 }
