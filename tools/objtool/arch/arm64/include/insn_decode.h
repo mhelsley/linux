@@ -72,4 +72,15 @@ int arm_decode_system_regs(u32 instr, enum insn_type *type,
 			   struct list_head *ops_list);
 int arm_decode_except_gen(u32 instr, enum insn_type *type,
 			  unsigned long *immediate, struct list_head *ops_list);
+int arm_decode_br_uncond_imm(u32 instr, enum insn_type *type,
+			     unsigned long *immediate,
+			     struct list_head *ops_list);
+int arm_decode_br_comp_imm(u32 instr, enum insn_type *type,
+			   unsigned long *immediate,
+			   struct list_head *ops_list);
+int arm_decode_br_tst_imm(u32 instr, enum insn_type *type,
+			  unsigned long *immediate, struct list_head *ops_list);
+int arm_decode_br_cond_imm(u32 instr, enum insn_type *type,
+			   unsigned long *immediate,
+			   struct list_head *ops_list);
 #endif /* _ARM_INSN_DECODE_H */

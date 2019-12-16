@@ -424,6 +424,26 @@ static struct aarch64_insn_decoder br_sys_decoder[] = {
 		.value = 0b1100000000000000000000,
 		.decode_func = arm_decode_except_gen,
 	},
+	{
+		.mask = 0b1111000000000000000000,
+		.value = 0b0100000000000000000000,
+		.decode_func = arm_decode_br_cond_imm,
+	},
+	{
+		.mask = 0b0110000000000000000000,
+		.value = 0b0000000000000000000000,
+		.decode_func = arm_decode_br_uncond_imm,
+	},
+	{
+		.mask = 0b0111000000000000000000,
+		.value = 0b0010000000000000000000,
+		.decode_func = arm_decode_br_comp_imm,
+	},
+	{
+		.mask = 0b0111000000000000000000,
+		.value = 0b0011000000000000000000,
+		.decode_func = arm_decode_br_tst_imm,
+	},
 };
 
 int arm_decode_br_sys(u32 instr, enum insn_type *type,
@@ -574,4 +594,63 @@ int arm_decode_except_gen(u32 instr, enum insn_type *type,
 #undef INSN_DCPS1
 #undef INSN_DCPS2
 #undef INSN_DCPS3
+}
+
+int arm_decode_br_cond_imm(u32 instr, enum insn_type *type,
+			   unsigned long *immediate, struct list_head *ops_list)
+{
+	unsigned char o0 = 0, o1 = 0;
+	u32 imm19;
+
+	o0 = EXTRACT_BIT(instr, 4);
+	o1 = EXTRACT_BIT(instr, 24);
+	imm19 = (instr >> 5) & ONES(19);
+
+	*immediate = SIGN_EXTEND(imm19 << 2, 19);
+
+	if ((o1 << 1) | o0)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	*type = INSN_JUMP_CONDITIONAL;
+
+	return 0;
+}
+
+int arm_decode_br_uncond_imm(u32 instr, enum insn_type *type,
+			     unsigned long *immediate,
+			     struct list_head *ops_list)
+{
+	unsigned char decode_field = 0;
+	u32 imm26 = 0;
+
+	decode_field = EXTRACT_BIT(instr, 31);
+	imm26 = instr & ONES(26);
+
+	*immediate = SIGN_EXTEND(imm26 << 2, 28);
+	if (decode_field == 0)
+		*type = INSN_JUMP_UNCONDITIONAL;
+	else
+		*type = INSN_CALL;
+
+	return 0;
+}
+
+int arm_decode_br_comp_imm(u32 instr, enum insn_type *type,
+			   unsigned long *immediate, struct list_head *ops_list)
+{
+	u32 imm19 = (instr >> 5) & ONES(19);
+
+	*immediate = SIGN_EXTEND(imm19 << 2, 21);
+	*type = INSN_JUMP_CONDITIONAL;
+	return 0;
+}
+
+int arm_decode_br_tst_imm(u32 instr, enum insn_type *type,
+			  unsigned long *immediate, struct list_head *ops_list)
+{
+	u32 imm14 = (instr >> 5) & ONES(14);
+
+	*immediate = SIGN_EXTEND(imm14 << 2, 16);
+	*type = INSN_JUMP_CONDITIONAL;
+	return 0;
 }
