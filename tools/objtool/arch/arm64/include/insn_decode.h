@@ -83,4 +83,7 @@ int arm_decode_br_tst_imm(u32 instr, enum insn_type *type,
 int arm_decode_br_cond_imm(u32 instr, enum insn_type *type,
 			   unsigned long *immediate,
 			   struct list_head *ops_list);
+int arm_decode_br_uncond_reg(u32 instr, enum insn_type *type,
+			     unsigned long *immediate,
+			     struct list_head *ops_list);
 #endif /* _ARM_INSN_DECODE_H */

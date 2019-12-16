@@ -444,6 +444,11 @@ static struct aarch64_insn_decoder br_sys_decoder[] = {
 		.value = 0b0011000000000000000000,
 		.decode_func = arm_decode_br_tst_imm,
 	},
+	{
+		.mask = 0b1111000000000000000000,
+		.value = 0b1101000000000000000000,
+		.decode_func = arm_decode_br_uncond_reg,
+	},
 };
 
 int arm_decode_br_sys(u32 instr, enum insn_type *type,
@@ -654,3 +659,148 @@ int arm_decode_br_tst_imm(u32 instr, enum insn_type *type,
 	*type = INSN_JUMP_CONDITIONAL;
 	return 0;
 }
+
+static struct aarch64_insn_decoder ret_decoder[] = {
+	/*
+	 * RET, RETAA, RETAB
+	 */
+	{
+		.mask = 0b1111111111111110000011111,
+		.value = 0b0010111110000000000000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111111111111111,
+		.value = 0b0010111110000101111111111,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111111111111111,
+		.value = 0b0010111110000111111111111,
+		.decode_func = NULL,
+	},
+};
+
+static struct aarch64_insn_decoder br_decoder[] = {
+	/*
+	 * BR, BRAA, BRAAZ, BRAB, BRABZ
+	 */
+	{
+		.mask = 0b1111111111111110000011111,
+		.value = 0b0000111110000000000000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111110000011111,
+		.value = 0b0000111110000100000011111,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111110000011111,
+		.value = 0b0000111110000110000011111,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111110000000000,
+		.value = 0b1000111110000100000000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111110000000000,
+		.value = 0b1000111110000110000000000,
+		.decode_func = NULL,
+	},
+};
+
+#define INSN_DRPS_FIELD		0b0101111110000001111100000
+#define INSN_DRPS_MASK		0b1111111111111111111111111
+
+static struct aarch64_insn_decoder ct_sw_decoder[] = {
+	/*
+	 * ERET, ERETAA, ERETAB
+	 */
+	{
+		.mask = INSN_DRPS_MASK,
+		.value = 0b0100111110000001111100000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = INSN_DRPS_MASK,
+		.value = 0b0100111110000101111111111,
+		.decode_func = NULL,
+	},
+	{
+		.mask = INSN_DRPS_MASK,
+		.value = 0b0100111110000111111111111,
+		.decode_func = NULL,
+	},
+};
+
+static struct aarch64_insn_decoder call_decoder[] = {
+	/*
+	 * BLR, BLRAA, BLRAAZ, BLRAB, BLRABZ
+	 */
+	{
+		.mask = 0b1111111111111110000011111,
+		.value =  0b0001111110000000000000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111110000011111,
+		.value = 0b0001111110000100000011111,
+		.decode_func = NULL,
+	},
+	{
+		0b1111111111111110000011111,
+		0b0001111110000110000011111,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111110000000000,
+		.value = 0b1001111110000100000000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b1111111111111110000000000,
+		.value = 0b1001111110000110000000000,
+		.decode_func = NULL,
+	},
+};
+
+int arm_decode_br_uncond_reg(u32 instr, enum insn_type *type,
+			     unsigned long *immediate,
+			     struct list_head *ops_list)
+{
+	u32 decode_field = 0;
+	int i = 0;
+
+	decode_field = instr & ONES(25);
+	*type = 0;
+	for (i = 0; i < ARRAY_SIZE(br_decoder); i++) {
+		if ((decode_field & br_decoder[i].mask) == br_decoder[i].value)
+			*type = INSN_JUMP_DYNAMIC;
+	}
+	for (i = 0; i < ARRAY_SIZE(call_decoder); i++) {
+		if ((decode_field & call_decoder[i].value) ==
+		    call_decoder[i].value)
+			*type = INSN_CALL_DYNAMIC;
+	}
+	for (i = 0; i < ARRAY_SIZE(ret_decoder); i++) {
+		if ((decode_field & ret_decoder[i].mask) ==
+		    ret_decoder[i].value)
+			*type = INSN_RETURN;
+	}
+	for (i = 0; i < ARRAY_SIZE(ct_sw_decoder); i++) {
+		if ((decode_field & ct_sw_decoder[i].mask) ==
+		    ct_sw_decoder[i].value)
+			*type = INSN_CONTEXT_SWITCH;
+	}
+	if ((decode_field & INSN_DRPS_MASK) == INSN_DRPS_FIELD)
+		*type = INSN_OTHER;
+	if (*type == 0)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+	return 0;
+}
+
+#undef INSN_DRPS_FIELD
+#undef INSN_DRPS_MASK
