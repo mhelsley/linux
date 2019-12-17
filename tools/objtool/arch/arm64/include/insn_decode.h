@@ -10,6 +10,10 @@
 #define INSN_UNALLOC	0b0011
 #define INSN_DP_IMM	0b1001	//0x100x
 #define INSN_SYS_BRANCH	0b1011	//0x101x
+#define INSN_LD_ST_4	0b0100	//0bx1x0
+#define INSN_LD_ST_6	0b0110	//0bx1x0
+#define INSN_LD_ST_C	0b1100	//0bx1x0
+#define INSN_LD_ST_E	0b1110	//0bx1x0
 
 #define NR_INSN_CLASS	16
 #define INSN_CLASS(opcode)	(((opcode) >> 25) & (NR_INSN_CLASS - 1))
@@ -37,6 +41,8 @@ int arm_decode_dp_imm(u32 instr, enum insn_type *type,
 		      unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_br_sys(u32 instr, enum insn_type *type,
 		      unsigned long *immediate, struct list_head *ops_list);
+int arm_decode_ld_st(u32 instr, enum insn_type *type,
+		     unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_unknown(u32 instr, enum insn_type *type,
 		       unsigned long *immediate, struct list_head *ops_list);
 
@@ -86,4 +92,21 @@ int arm_decode_br_cond_imm(u32 instr, enum insn_type *type,
 int arm_decode_br_uncond_reg(u32 instr, enum insn_type *type,
 			     unsigned long *immediate,
 			     struct list_head *ops_list);
+
+/* arm64 load/store instructions */
+int arm_decode_ld_st_regs_unsc_imm(u32 instr, enum insn_type *type,
+				   unsigned long *immediate,
+				   struct list_head *ops_list);
+int arm_decode_ld_st_imm_post(u32 instr, enum insn_type *type,
+			      unsigned long *immediate,
+			      struct list_head *ops_list);
+int arm_decode_ld_st_imm_unpriv(u32 instr, enum insn_type *type,
+				unsigned long *immediate,
+				struct list_head *ops_list);
+int arm_decode_ld_st_imm_pre(u32 instr, enum insn_type *type,
+			     unsigned long *immediate,
+			     struct list_head *ops_list);
+int arm_decode_ld_st_regs_unsigned(u32 instr, enum insn_type *type,
+				   unsigned long *immediate,
+				   struct list_head *ops_list);
 #endif /* _ARM_INSN_DECODE_H */
