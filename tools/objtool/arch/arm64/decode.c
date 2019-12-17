@@ -831,6 +831,11 @@ static struct aarch64_insn_decoder ld_st_decoder[] = {
 		.decode_func = arm_decode_ld_st_imm_pre,
 	},
 	{
+		.mask = 0b001101010000011,
+		.value = 0b001100010000010,
+		.decode_func = arm_decode_ld_st_regs_off,
+	},
+	{
 		.mask = 0b001101000000000,
 		.value = 0b001101000000000,
 		.decode_func = arm_decode_ld_st_regs_unsigned,
@@ -1198,5 +1203,34 @@ int arm_decode_ld_st_imm_unpriv(u32 instr, enum insn_type *type,
 		op->src.offset = 0;
 		break;
 	}
+	return 0;
+}
+
+int arm_decode_ld_st_regs_off(u32 instr, enum insn_type *type,
+			      unsigned long *immediate,
+			      struct list_head *ops_list)
+{
+	unsigned char size = 0, V = 0, opc = 0, option = 0;
+	unsigned char decode_field = 0;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	opc = (instr >> 22) & ONES(2);
+	option = (instr >> 13) & ONES(3);
+
+#define LD_ROFF_UNALLOC_1	0b01110
+#define LD_ROFF_UNALLOC_2	0b10110
+#define LD_ROFF_UNALLOC_3	0b10011
+	decode_field = (size << 3) | (V << 2) | opc;
+	if (!EXTRACT_BIT(option, 1) ||
+	    (decode_field & LD_ROFF_UNALLOC_1) == LD_ROFF_UNALLOC_1 ||
+	    (decode_field & LD_ROFF_UNALLOC_2) == LD_ROFF_UNALLOC_2 ||
+	    (decode_field & 0b10111) == LD_ROFF_UNALLOC_3) {
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+	}
+#undef LD_ROFF_UNALLOC_1
+#undef LD_ROFF_UNALLOC_2
+#undef LD_ROFF_UNALLOC_3
+
 	return 0;
 }
