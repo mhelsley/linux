@@ -811,6 +811,26 @@ int arm_decode_br_uncond_reg(u32 instr, enum insn_type *type,
 
 static struct aarch64_insn_decoder ld_st_decoder[] = {
 	{
+		.mask = 0b001101100000000,
+		.value = 0b001000000000000,
+		.decode_func = arm_decode_ld_st_noalloc_pair_off,
+	},
+	{
+		.mask = 0b001101100000000,
+		.value = 0b001000100000000,
+		.decode_func = arm_decode_ld_st_regs_pair_post,
+	},
+	{
+		.mask = 0b001101100000000,
+		.value = 0b001001000000000,
+		.decode_func = arm_decode_ld_st_regs_pair_off,
+	},
+	{
+		.mask = 0b001101100000000,
+		.value = 0b001001100000000,
+		.decode_func = arm_decode_ld_st_regs_pair_pre,
+	},
+	{
 		.mask = 0b001101010000011,
 		.value = 0b001100000000000,
 		.decode_func = arm_decode_ld_st_regs_unsc_imm,
@@ -1231,6 +1251,206 @@ int arm_decode_ld_st_regs_off(u32 instr, enum insn_type *type,
 #undef LD_ROFF_UNALLOC_1
 #undef LD_ROFF_UNALLOC_2
 #undef LD_ROFF_UNALLOC_3
+
+	return 0;
+}
+
+int arm_decode_ld_st_noalloc_pair_off(u32 instr, enum insn_type *type,
+				      unsigned long *immediate,
+				      struct list_head *ops_list)
+{
+	unsigned char opc = 0, V = 0, L = 0;
+	unsigned char decode_field = 0;
+
+	opc = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	L = EXTRACT_BIT(instr, 22);
+
+	decode_field = (opc << 2) | (V << 1) | L;
+
+	if (decode_field == 0x4 ||
+	    decode_field == 0x5 ||
+	    decode_field >= 12) {
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+	}
+	return arm_decode_ld_st_regs_pair_off(instr, type, immediate, ops_list);
+}
+
+int arm_decode_ld_st_regs_pair_off(u32 instr, enum insn_type *type,
+				   unsigned long *immediate,
+				   struct list_head *ops_list)
+{
+	unsigned char opc = 0, V = 0, L = 0, bit = 0;
+	unsigned char imm7 = 0, rt2 = 0, rt = 0, rn = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+	int scale = 0;
+
+	opc = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	L = EXTRACT_BIT(instr, 22);
+	imm7 = (instr >> 15) & ONES(7);
+	rt2 = (instr >> 10) & ONES(5);
+	rn = (instr >> 5) & ONES(5);
+	rt = instr & ONES(5);
+	bit = EXTRACT_BIT(opc, 1);
+	scale = 2 + bit;
+
+	decode_field = (opc << 2) | (V << 1) | L;
+
+	if (decode_field >= 0xC)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	*immediate = (SIGN_EXTEND(imm7, 7)) << scale;
+
+	if (!stack_related_reg(rn)) {
+		*type = INSN_OTHER;
+		return 0;
+	}
+
+	*type = INSN_STACK;
+
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+	switch (decode_field) {
+	case 1:
+	case 3:
+	case 5:
+	case 7:
+	case 9:
+	case 11:
+		/* load */
+		op->src.type = OP_SRC_REG_INDIRECT;
+		op->src.reg = rn;
+		op->src.offset = *immediate;
+		op->dest.type = OP_DEST_REG;
+		op->dest.reg = rt;
+		op->dest.offset = 0;
+		{
+			struct stack_op *extra;
+
+			extra = malloc(sizeof(*extra));
+			extra->src.type = OP_SRC_REG_INDIRECT;
+			extra->src.reg = rn;
+			extra->src.offset = (int)*immediate + 8;
+			extra->dest.type = OP_DEST_REG;
+			extra->dest.reg = rt2;
+			extra->dest.offset = 0;
+
+			list_add_tail(&extra->list, ops_list);
+		}
+		break;
+	default:
+		op->dest.type = OP_DEST_REG_INDIRECT;
+		op->dest.reg = rn;
+		op->dest.offset = (int)*immediate + 8;
+		op->src.type = OP_SRC_REG;
+		op->src.reg = rt2;
+		op->src.offset = 0;
+		{
+			struct stack_op *extra;
+
+			extra = malloc(sizeof(*extra));
+			extra->dest.type = OP_DEST_REG_INDIRECT;
+			extra->dest.reg = rn;
+			extra->dest.offset = *immediate;
+			extra->src.type = OP_SRC_REG;
+			extra->src.reg = rt;
+			extra->src.offset = 0;
+
+			list_add_tail(&extra->list, ops_list);
+		}
+		/* store */
+	}
+	return 0;
+}
+
+int arm_decode_ld_st_regs_pair_post(u32 instr, enum insn_type *type,
+				    unsigned long *immediate,
+				    struct list_head *ops_list)
+{
+	int ret = 0;
+	unsigned int base_reg;
+	bool base_is_src;
+	struct stack_op *op;
+	struct stack_op *post_inc;
+
+	ret = arm_decode_ld_st_regs_pair_off(instr, type, immediate, ops_list);
+	if (ret < 0 || *type == INSN_OTHER)
+		return ret;
+
+	op = list_first_entry(ops_list, typeof(*op), list);
+	if (op->dest.type == OP_DEST_REG_INDIRECT) {
+		base_reg = op->dest.reg;
+		base_is_src = false;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		base_is_src = true;
+	} else {
+		WARN("Unexpected base type");
+		return -1;
+	}
+
+	post_inc = malloc(sizeof(*post_inc));
+	post_inc->dest.type = OP_DEST_REG;
+	post_inc->dest.reg = base_reg;
+	post_inc->src.reg = base_reg;
+	post_inc->src.type = OP_SRC_ADD;
+	post_inc->src.offset = (int)*immediate;
+
+	/* Adapt offsets */
+	list_for_each_entry(op, ops_list, list) {
+		if (!base_is_src)
+			op->dest.offset -= post_inc->src.offset;
+		else
+			op->src.offset -= post_inc->src.offset;
+	}
+	list_add_tail(&post_inc->list, ops_list);
+
+	return ret;
+}
+
+int arm_decode_ld_st_regs_pair_pre(u32 instr, enum insn_type *type,
+				   unsigned long *immediate,
+				   struct list_head *ops_list)
+{
+	int ret = 0;
+	unsigned int base_reg;
+	bool base_is_src;
+	struct stack_op *op;
+	struct stack_op *pre_inc;
+
+	ret = arm_decode_ld_st_regs_pair_off(instr, type, immediate, ops_list);
+	if (ret < 0 || *type == INSN_OTHER)
+		return ret;
+
+	op = list_first_entry(ops_list, typeof(*op), list);
+	if (op->dest.type == OP_DEST_REG_INDIRECT) {
+		base_reg = op->dest.reg;
+		base_is_src = false;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		base_is_src = true;
+	} else {
+		WARN("Unexpected base type");
+		return -1;
+	}
+
+	pre_inc = malloc(sizeof(*pre_inc));
+	pre_inc->dest.type = OP_DEST_REG;
+	pre_inc->dest.reg = base_reg;
+	pre_inc->src.type = OP_SRC_ADD;
+	pre_inc->src.reg = base_reg;
+	pre_inc->src.offset = (int)*immediate;
+
+	/* Adapt offsets */
+	list_for_each_entry(op, ops_list, list) {
+		if (!base_is_src)
+			op->dest.offset -= pre_inc->src.offset;
+		else
+			op->src.offset -= pre_inc->src.offset;
+	}
+	list_add(&pre_inc->list, ops_list);
 
 	return 0;
 }
