@@ -86,8 +86,12 @@ static arm_decode_class aarch64_insn_class_decode_table[NR_INSN_CLASS] = {
 	[INSN_RESERVED]			= arm_decode_unknown,
 	[INSN_UNKNOWN]			= arm_decode_unknown,
 	[INSN_UNALLOC]			= arm_decode_unknown,
+	[INSN_LD_ST_4]			= arm_decode_ld_st,
+	[INSN_LD_ST_6]			= arm_decode_ld_st,
 	[0b1000 ... INSN_DP_IMM]	= arm_decode_dp_imm,
 	[0b1010 ... INSN_SYS_BRANCH]	= arm_decode_br_sys,
+	[INSN_LD_ST_C]			= arm_decode_ld_st,
+	[INSN_LD_ST_E]			= arm_decode_ld_st,
 };
 
 /*
@@ -804,3 +808,395 @@ int arm_decode_br_uncond_reg(u32 instr, enum insn_type *type,
 
 #undef INSN_DRPS_FIELD
 #undef INSN_DRPS_MASK
+
+static struct aarch64_insn_decoder ld_st_decoder[] = {
+	{
+		.mask = 0b001101010000011,
+		.value = 0b001100000000000,
+		.decode_func = arm_decode_ld_st_regs_unsc_imm,
+	},
+	{
+		.mask = 0b001101010000011,
+		.value = 0b001100000000001,
+		.decode_func = arm_decode_ld_st_imm_post,
+	},
+	{
+		.mask = 0b001101010000011,
+		.value = 0b001100000000010,
+		.decode_func = arm_decode_ld_st_imm_unpriv,
+	},
+	{
+		.mask = 0b001101010000011,
+		.value = 0b001100000000011,
+		.decode_func = arm_decode_ld_st_imm_pre,
+	},
+	{
+		.mask = 0b001101000000000,
+		.value = 0b001101000000000,
+		.decode_func = arm_decode_ld_st_regs_unsigned,
+	},
+};
+
+int arm_decode_ld_st(u32 instr, enum insn_type *type,
+		     unsigned long *immediate, struct list_head *ops_list)
+{
+	u32 decode_field = 0;
+	int i = 0;
+	unsigned char op0 = 0, op1 = 0, op2 = 0, op3 = 0, op4 = 0;
+
+	op0 = (instr >> 28) & ONES(4);
+	op1 = EXTRACT_BIT(instr, 26);
+	op2 = (instr >> 23) & ONES(2);
+	op3 = (instr >> 16) & ONES(6);
+	op4 = (instr >> 10) & ONES(2);
+	decode_field = (op0 << 3) | (op1 << 2) | op2;
+	decode_field = (decode_field << 8) | (op3 << 2) | op4;
+
+	for (i = 0; i < ARRAY_SIZE(ld_st_decoder); i++) {
+		if ((decode_field & ld_st_decoder[i].mask) ==
+		    ld_st_decoder[i].value) {
+			return ld_st_decoder[i].decode_func(instr,
+							    type,
+							    immediate,
+							    ops_list);
+		}
+	}
+	return arm_decode_unknown(instr, type, immediate, ops_list);
+}
+
+int arm_decode_ld_st_regs_unsc_imm(u32 instr, enum insn_type *type,
+				   unsigned long *immediate,
+				   struct list_head *ops_list)
+{
+	u32 imm9 = 0;
+	unsigned char size = 0, V = 0, opc = 0, rn = 0, rt = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	opc = (instr >> 22) & ONES(2);
+
+	imm9 = (instr >> 12) & ONES(9);
+	rn = (instr >> 5) & ONES(5);
+	rt = instr & ONES(5);
+
+	decode_field = (size << 2) | (V << 2) | opc;
+
+	switch (decode_field) {
+	case 0b01110:
+	case 0b01111:
+	case 0b11110:
+	case 0b11111:
+	case 0b10011:
+	case 0b11011:
+	case 0b10110:
+	case 0b10111:
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+	case 26:
+		/* prefetch */
+		*type = INSN_OTHER;
+		return 0;
+	case 1:
+	case 2:
+	case 3:
+	case 5:
+	case 7:
+	case 9:
+	case 10:
+	case 11:
+	case 13:
+	case 17:
+	case 18:
+	case 21:
+	case 25:
+	case 29:
+		/* load */
+		if (!stack_related_reg(rn)) {
+			*type = INSN_OTHER;
+			return 0;
+		}
+
+		op = calloc(1, sizeof(*op));
+		list_add_tail(&op->list, ops_list);
+
+		op->src.type = OP_SRC_REG_INDIRECT;
+		op->src.reg = rn;
+		op->src.offset = SIGN_EXTEND(imm9, 9);
+		op->dest.type = OP_DEST_REG;
+		op->dest.reg = rt;
+		op->dest.offset = 0;
+		break;
+	default:
+		if (!stack_related_reg(rn)) {
+			*type = INSN_OTHER;
+			return 0;
+		}
+
+		op = calloc(1, sizeof(*op));
+		list_add_tail(&op->list, ops_list);
+
+		op->dest.type = OP_DEST_REG_INDIRECT;
+		op->dest.reg = rn;
+		op->dest.offset = SIGN_EXTEND(imm9, 9);
+		op->src.type = OP_DEST_REG;
+		op->src.reg = rt;
+		op->src.offset = 0;
+		break;
+	}
+
+	*type = INSN_STACK;
+	return 0;
+}
+
+static struct aarch64_insn_decoder ld_unsig_unalloc_decoder[] = {
+	{
+		.mask = 0b01110,
+		.value = 0b01110,
+	},
+	{
+		.mask = 0b10111,
+		.value = 0b10011,
+	},
+	{
+		.mask = 0b10110,
+		.value = 0b10110,
+	},
+};
+
+int arm_decode_ld_st_regs_unsigned(u32 instr, enum insn_type *type,
+				   unsigned long *immediate,
+				   struct list_head *ops_list)
+{
+	unsigned char size = 0, V = 0, opc = 0, rn = 0, rt = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+	u32 imm12 = 0;
+	int i = 0;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	opc = (instr >> 22) & ONES(2);
+
+	decode_field = (size << 3) | (V << 2) | opc;
+	for (i = 0; i < ARRAY_SIZE(ld_unsig_unalloc_decoder); i++) {
+		if ((decode_field & ld_unsig_unalloc_decoder[i].mask) ==
+		    ld_unsig_unalloc_decoder[i].value) {
+			return arm_decode_unknown(instr, type,
+						immediate, ops_list);
+		}
+	}
+
+	imm12 = (instr >> 10) & ONES(12);
+	rn = (instr >> 5) & ONES(5);
+	rt = instr & ONES(5);
+
+	if (!stack_related_reg(rn) || decode_field == 26) {
+		*type = INSN_OTHER;
+		return 0;
+	}
+
+	*type = INSN_STACK;
+
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+	switch (decode_field) {
+	case 1:
+	case 2:
+	case 3:
+	case 5:
+	case 7:
+	case 9:
+	case 10:
+	case 11:
+	case 13:
+	case 17:
+	case 18:
+	case 21:
+	case 25:
+		/* load */
+		op->src.type = OP_SRC_REG_INDIRECT;
+		op->src.reg = rn;
+		op->src.offset = imm12;
+		op->dest.type = OP_DEST_REG;
+		op->dest.reg = rt;
+		op->dest.offset = 0;
+		break;
+	default: /* store */
+		op->dest.type = OP_DEST_REG_INDIRECT;
+		op->dest.reg = rn;
+		op->dest.offset = imm12;
+		op->src.type = OP_DEST_REG;
+		op->src.reg = rt;
+		op->src.offset = 0;
+	}
+
+	return 0;
+}
+
+int arm_decode_ld_st_imm_post(u32 instr, enum insn_type *type,
+			      unsigned long *immediate,
+			      struct list_head *ops_list)
+{
+	unsigned char size = 0, V = 0, opc = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+	struct stack_op *post_inc;
+	int base_reg;
+	u32 imm9 = 0;
+	int ret = 0;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	opc = (instr >> 22) & ONES(2);
+
+	imm9 = (instr >> 12) & ONES(9);
+
+	decode_field = (size << 2) | (V << 2) | opc;
+
+	if (decode_field == 0b11010)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	ret = arm_decode_ld_st_regs_unsigned(instr, type, immediate, ops_list);
+	if (ret < 0 || *type == INSN_OTHER)
+		return ret;
+
+	op = list_first_entry(ops_list, typeof(*op), list);
+	if (op->dest.type == OP_DEST_REG_INDIRECT) {
+		base_reg = op->dest.reg;
+		op->dest.offset = 0;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		op->src.offset = 0;
+	} else {
+		WARN("Cannot find stack op base");
+		return -1;
+	}
+
+	post_inc = malloc(sizeof(*post_inc));
+	post_inc->dest.type = OP_DEST_REG;
+	post_inc->dest.reg = base_reg;
+	post_inc->src.reg = base_reg;
+	post_inc->src.type = OP_SRC_ADD;
+	post_inc->src.offset = SIGN_EXTEND(imm9, 9);
+
+	list_add_tail(&post_inc->list, ops_list);
+
+	return 0;
+}
+
+int arm_decode_ld_st_imm_pre(u32 instr, enum insn_type *type,
+			     unsigned long *immediate,
+			     struct list_head *ops_list)
+{
+	unsigned char size = 0, V = 0, opc = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+	struct stack_op *pre_inc;
+	int base_reg;
+	u32 imm9 = 0;
+	int ret = 0;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	opc = (instr >> 22) & ONES(2);
+
+	imm9 = (instr >> 12) & ONES(9);
+
+	decode_field = (size << 2) | (V << 2) | opc;
+
+	if (decode_field == 0b11010)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	ret = arm_decode_ld_st_regs_unsigned(instr, type, immediate, ops_list);
+	if (ret < 0 || *type == INSN_OTHER)
+		return ret;
+
+	op = list_first_entry(ops_list, typeof(*op), list);
+	if (op->dest.type == OP_DEST_REG_INDIRECT) {
+		base_reg = op->dest.reg;
+		op->dest.offset = 0;
+	} else if (op->src.type == OP_SRC_REG_INDIRECT) {
+		base_reg = op->src.reg;
+		op->src.offset = 0;
+	} else {
+		WARN("Cannot find stack op base");
+		return -1;
+	}
+
+	pre_inc = malloc(sizeof(*pre_inc));
+	pre_inc->dest.type = OP_DEST_REG;
+	pre_inc->dest.reg = base_reg;
+	pre_inc->src.reg = base_reg;
+	pre_inc->src.type = OP_SRC_ADD;
+	pre_inc->src.offset = SIGN_EXTEND(imm9, 9);
+
+	list_add(&pre_inc->list, ops_list);
+
+	return 0;
+}
+
+#define LD_UNPR_UNALLOC_1 0b10011
+#define LD_UNPR_UNALLOC_2 0b11010
+int arm_decode_ld_st_imm_unpriv(u32 instr, enum insn_type *type,
+				unsigned long *immediate,
+				struct list_head *ops_list)
+{
+	unsigned char size = 0, V = 0, opc = 0, rn = 0, rt = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+	u32 imm9 = 0;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	opc = (instr >> 22) & ONES(2);
+
+	imm9 = (instr >> 12) & ONES(9);
+
+	decode_field = (size << 3) | (V << 2) | opc;
+	if (V == 1 ||
+	    (decode_field & 0b10111) == LD_UNPR_UNALLOC_1 ||
+	    (decode_field & 0b11111) == LD_UNPR_UNALLOC_2) {
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+	}
+#undef LD_UNPR_UNALLOC_1
+#undef LD_UNPR_UNALLOC_2
+
+	if (!stack_related_reg(rn)) {
+		*type = INSN_OTHER;
+		return 0;
+	}
+	*type = INSN_STACK;
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+
+	switch (decode_field) {
+	case 1:
+	case 2:
+	case 3:
+	case 9:
+	case 10:
+	case 11:
+	case 17:
+	case 18:
+	case 25:
+		/* load */
+		op->src.type = OP_SRC_REG_INDIRECT;
+		op->src.reg = rn;
+		op->src.offset = SIGN_EXTEND(imm9, 9);
+		op->dest.type = OP_DEST_REG;
+		op->dest.reg = rt;
+		op->dest.offset = 0;
+		break;
+	default:
+		/* store */
+		op->dest.type = OP_DEST_REG_INDIRECT;
+		op->dest.reg = rn;
+		op->dest.offset = SIGN_EXTEND(imm9, 9);
+		op->src.type = OP_DEST_REG;
+		op->src.reg = rt;
+		op->src.offset = 0;
+		break;
+	}
+	return 0;
+}
