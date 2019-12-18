@@ -18,6 +18,47 @@ static bool stack_related_reg(int reg)
 	return reg == CFI_SP || reg == CFI_BP;
 }
 
+struct insn_loc {
+	struct section *sec;
+	unsigned long offset;
+	struct hlist_node hnode;
+};
+
+DEFINE_HASHTABLE(text_constants, 16);
+
+int arch_post_process_file(struct objtool_file *file)
+{
+	struct hlist_node *tmp;
+	struct insn_loc *loc;
+	unsigned int bkt;
+	int res = 0;
+
+	/*
+	 * Data placed in code sections could turn out to be a valid aarch64
+	 * opcode.
+	 * If that is the case, change the insn type to invalid as it should
+	 * never be reached by the execution flow.
+	 */
+	hash_for_each_safe(text_constants, bkt, tmp, loc, hnode) {
+		struct instruction *insn;
+
+		insn = find_insn(file, loc->sec, loc->offset);
+		if (insn) {
+			insn->type = INSN_INVALID;
+		} else {
+			WARN("failed to find constant at %s+0x%lx",
+			     loc->sec->name, loc->offset);
+			res = -1;
+		}
+		hash_del(&loc->hnode);
+		free(loc);
+	}
+
+	return res;
+}
+
+static struct insn_loc current_location;
+
 bool arch_callee_saved_reg(unsigned char reg)
 {
 	switch (reg) {
@@ -127,6 +168,8 @@ int arch_decode_instruction(struct elf *elf, struct section *sec,
 	//retrieve instruction (from sec->data->offset)
 	insn = *(u32 *)(sec->data->d_buf + offset);
 
+	current_location.sec = sec;
+	current_location.offset = offset;
 	//dispatch according to encoding classes
 	decode_fun = aarch64_insn_class_decode_table[INSN_CLASS(insn)];
 	if (decode_fun)
@@ -136,6 +179,9 @@ int arch_decode_instruction(struct elf *elf, struct section *sec,
 
 	if (res)
 		WARN_FUNC("Unsupported instruction", sec, offset);
+
+	memset(&current_location, 0, sizeof(current_location));
+
 	return res;
 }
 
@@ -846,6 +892,11 @@ static struct aarch64_insn_decoder ld_st_decoder[] = {
 		.decode_func = arm_decode_ldapr_stlr_unsc_imm,
 	},
 	{
+		.mask = 0b001101000000000,
+		.value = 0b000100000000000,
+		.decode_func = arm_decode_ld_regs_literal,
+	},
+	{
 		.mask = 0b001101100000000,
 		.value = 0b001000000000000,
 		.decode_func = arm_decode_ld_st_noalloc_pair_off,
@@ -1349,6 +1400,43 @@ int arm_decode_ld_st_exclusive(u32 instr, enum insn_type *type,
 #undef LDAXP_64
 #undef LDLAR_64
 #undef LDAR_64
+
+int arm_decode_ld_regs_literal(u32 instr, enum insn_type *type,
+			       unsigned long *immediate,
+			       struct list_head *ops_list)
+{
+	unsigned char opc = 0, V = 0;
+	long pc_offset;
+	struct insn_loc *loc;
+
+	opc = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+
+	if (((opc << 1) | V) == 0x7)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	pc_offset = instr & GENMASK(23, 5);
+
+	/* Sign extend and multiply by 4 */
+	pc_offset = (pc_offset << (64 - 23));
+	pc_offset = ((pc_offset >> (64 - 23)) >> 5) << 2;
+
+	loc = malloc(sizeof(*loc));
+	loc->sec = current_location.sec;
+	loc->offset = current_location.offset + pc_offset;
+	hash_add(text_constants, &loc->hnode, loc->offset);
+
+	/* 64-bit literal */
+	if (opc & 1) {
+		loc = malloc(sizeof(*loc));
+		loc->sec = current_location.sec;
+		loc->offset = current_location.offset + pc_offset + 4;
+		hash_add(text_constants, &loc->hnode, loc->offset);
+	}
+
+	*type = INSN_OTHER;
+	return 0;
+}
 
 int arm_decode_ld_st_regs_unsc_imm(u32 instr, enum insn_type *type,
 				   unsigned long *immediate,
