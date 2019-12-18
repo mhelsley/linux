@@ -886,6 +886,11 @@ static struct aarch64_insn_decoder ld_st_decoder[] = {
 		.decode_func = arm_decode_ld_st_regs_off,
 	},
 	{
+		.mask = 0b001101010000001,
+		.value = 0b001100010000001,
+		.decode_func = arm_decode_ld_st_regs_pac,
+	},
+	{
 		.mask = 0b001101000000000,
 		.value = 0b001101000000000,
 		.decode_func = arm_decode_ld_st_regs_unsigned,
@@ -1978,6 +1983,52 @@ int arm_decode_ld_st_regs_pair_pre(u32 instr, enum insn_type *type,
 			op->src.offset -= pre_inc->src.offset;
 	}
 	list_add(&pre_inc->list, ops_list);
+
+	return 0;
+}
+
+int arm_decode_ld_st_regs_pac(u32 instr, enum insn_type *type,
+			      unsigned long *immediate,
+			      struct list_head *ops_list)
+{
+	unsigned char size = 0, V = 0, W = 0, S = 0;
+	unsigned char rn = 0, rt = 0;
+	struct stack_op *op;
+	u32 imm9 = 0, s10 = 0;
+
+	size = (instr >> 30) & ONES(2);
+	V = EXTRACT_BIT(instr, 26);
+	W = EXTRACT_BIT(instr, 11);
+
+	if (size != 3 || V == 1)
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+
+	rn = (instr >> 5) & ONES(5);
+
+	if (!stack_related_reg(rn)) {
+		*type = INSN_OTHER;
+		return 0;
+	}
+
+	S = EXTRACT_BIT(instr, 22);
+	s10 = (S << 9) | imm9;
+
+	*type = INSN_STACK;
+
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+
+	op->dest.reg = rt;
+	op->dest.type = OP_DEST_REG;
+	op->dest.offset = 0;
+	op->src.offset = (SIGN_EXTEND(s10, 9) << 3);
+	if (W) { /* pre-indexed/writeback */
+		op->src.type = OP_SRC_POP;
+		op->src.reg = rn;
+	} else {
+		op->src.type = OP_SRC_REG_INDIRECT;
+		op->src.reg = rn;
+	}
 
 	return 0;
 }
