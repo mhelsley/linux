@@ -811,6 +811,26 @@ int arm_decode_br_uncond_reg(u32 instr, enum insn_type *type,
 
 static struct aarch64_insn_decoder ld_st_decoder[] = {
 	{
+		.mask = 0b101111111111100,
+		.value = 0b000010000000000,
+		.decode_func = arm_decode_adv_simd_mult,
+	},
+	{
+		.mask = 0b101111110000000,
+		.value = 0b000010100000000,
+		.decode_func = arm_decode_adv_simd_mult_post,
+	},
+	{
+		.mask = 0b101111101111100,
+		.value = 0b000011000000000,
+		.decode_func = arm_decode_adv_simd_single,
+	},
+	{
+		.mask = 0b101111100000000,
+		.value = 0b000011100000000,
+		.decode_func = arm_decode_adv_simd_single_post,
+	},
+	{
 		.mask = 0b001101100000000,
 		.value = 0b001000000000000,
 		.decode_func = arm_decode_ld_st_noalloc_pair_off,
@@ -887,6 +907,287 @@ int arm_decode_ld_st(u32 instr, enum insn_type *type,
 		}
 	}
 	return arm_decode_unknown(instr, type, immediate, ops_list);
+}
+
+static int adv_simd_mult_fields[] = {
+	0b00000,
+	0b00010,
+	0b00100,
+	0b00110,
+	0b00111,
+	0b01000,
+	0b01010,
+	0b10000,
+	0b10010,
+	0b10100,
+	0b10110,
+	0b10111,
+	0b11000,
+	0b11010,
+};
+
+int arm_decode_adv_simd_mult(u32 instr, enum insn_type *type,
+			     unsigned long *immediate,
+			     struct list_head *ops_list)
+{
+	unsigned char L = 0, opcode = 0, rn = 0;
+	unsigned char decode_field = 0;
+	int i = 0;
+
+	L = EXTRACT_BIT(instr, 22);
+	opcode = (instr >> 12) & ONES(4);
+
+	decode_field = (L << 4) | opcode;
+	rn = (instr >> 5) & ONES(5);
+	*type = INSN_OTHER;
+
+	for (i = 0; i < ARRAY_SIZE(adv_simd_mult_fields); i++) {
+		if ((decode_field & 0b11111) == adv_simd_mult_fields[i]) {
+			if (!stack_related_reg(rn))
+				return 0;
+		}
+	}
+
+	return arm_decode_unknown(instr, type, immediate, ops_list);
+}
+
+int arm_decode_adv_simd_mult_post(u32 instr, enum insn_type *type,
+				  unsigned long *immediate,
+				  struct list_head *ops_list)
+{
+	/* same opcode as for the no offset variant */
+	int ret = 0;
+
+	ret = arm_decode_adv_simd_mult(instr, type, immediate, ops_list);
+
+	/* TODO: Create stack_op for post increment with immediate */
+	return ret;
+}
+
+static struct aarch64_insn_decoder simd_single_decoder[] = {
+	{
+		.mask = 0b11111000,
+		.value = 0b00000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111000,
+		.value = 0b00001000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b00010000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b00011000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b00100000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b00100001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b00101000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b00101001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111000,
+		.value = 0b01000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111000,
+		.value = 0b01001000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b01010000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b01011000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b01100000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b01100001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b01101000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b01101001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111000,
+		.value = 0b10000000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111000,
+		.value = 0b10001000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b10010000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b10011000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b10100000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b10100001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b10101000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b10101001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111100,
+		.value = 0b10110000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111100,
+		.value = 0b10111000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11000000,
+		.value = 0b11111000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111000,
+		.value = 0b11001000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b11010000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111001,
+		.value = 0b11011000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b11100000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b11100001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111011,
+		.value = 0b11101000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111111,
+		.value = 0b11101001,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111100,
+		.value = 0b11110000,
+		.decode_func = NULL,
+	},
+	{
+		.mask = 0b11111100,
+		.value = 0b11111000,
+		.decode_func = NULL,
+	},
+};
+
+int arm_decode_adv_simd_single(u32 instr, enum insn_type *type,
+			       unsigned long *immediate,
+			       struct list_head *ops_list)
+{
+	unsigned char L = 0, R = 0, S = 0, opcode = 0, size = 0;
+	unsigned char rn = 0, dfield = 0;
+	int i = 0;
+
+	L = EXTRACT_BIT(instr, 22);
+	R = EXTRACT_BIT(instr, 21);
+	S = EXTRACT_BIT(instr, 12);
+	opcode = (instr >> 13) & ONES(3);
+	size = (instr >> 10) & ONES(2);
+
+	dfield = (L << 7) | (R << 6) | (opcode << 3) | (S << 2) | size;
+
+	*type = INSN_OTHER;
+	rn = (instr << 5) & ONES(5);
+
+	for (i = 0; i < ARRAY_SIZE(simd_single_decoder); i++) {
+		if ((dfield & simd_single_decoder[i].mask) ==
+		    simd_single_decoder[i].value) {
+			if (!stack_related_reg(rn))
+				return 0;
+		}
+	}
+
+	return arm_decode_unknown(instr, type, immediate, ops_list);
+}
+
+int arm_decode_adv_simd_single_post(u32 instr, enum insn_type *type,
+				    unsigned long *immediate,
+				    struct list_head *ops_list)
+{
+	/* same opcode as for the no offset variant */
+	int ret = 0;
+
+	ret = arm_decode_adv_simd_single(instr, type, immediate, ops_list);
+
+	/* TODO: Create stack_op for post increment with immediate */
+	return ret;
 }
 
 int arm_decode_ld_st_regs_unsc_imm(u32 instr, enum insn_type *type,
