@@ -831,6 +831,11 @@ static struct aarch64_insn_decoder ld_st_decoder[] = {
 		.decode_func = arm_decode_adv_simd_single_post,
 	},
 	{
+		.mask = 0b111111010000000,
+		.value = 0b110101010000000,
+		.decode_func = arm_decode_ld_st_mem_tags,
+	},
+	{
 		.mask = 0b001111000000000,
 		.value = 0b000000000000000,
 		.decode_func = arm_decode_ld_st_exclusive,
@@ -2099,4 +2104,86 @@ int arm_decode_ldapr_stlr_unsc_imm(u32 instr, enum insn_type *type,
 	}
 
 	return 0;
+}
+
+int arm_decode_ld_st_mem_tags(u32 instr, enum insn_type *type,
+			      unsigned long *immediate,
+			      struct list_head *ops_list)
+{
+	u32 imm9 = 0;
+	unsigned char opc = 0, op2 = 0, rn = 0, rt = 0, decode_field = 0;
+	struct stack_op *op;
+
+	imm9 = (instr >> 12) & ONES(9);
+	opc = (instr >> 22) & ONES(2);
+	op2 = (instr >> 10) & ONES(2);
+	rn = (instr >> 5) & ONES(5);
+	rt = instr & ONES(6);
+
+	decode_field = (opc << 2) | op2;
+
+	if (decode_field == 0x0 ||
+	    (decode_field == 0x8 && imm9 != 0) ||
+	    (decode_field == 0xC && imm9 != 0)) {
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+	}
+
+	if (!stack_related_reg(rn)) {
+		*type = INSN_OTHER;
+		return 0;
+	}
+	*type = INSN_STACK;
+	*immediate = imm9;
+
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+
+	/*
+	 * Offset should normally be shifted to the
+	 * left of LOG2_TAG_GRANULE
+	 */
+	switch (decode_field) {
+	case 1:
+	case 5:
+	case 9:
+	case 13:
+		/* post index */
+	case 3:
+	case 7:
+	case 8:
+	case 11:
+	case 15:
+		/* pre index */
+		op->dest.reg = rn;
+		op->dest.type = OP_DEST_PUSH;
+		op->dest.offset = SIGN_EXTEND(imm9, 9);
+		op->src.reg = rt;
+		op->src.type = OP_SRC_REG;
+		op->src.offset = 0;
+		return 0;
+	case 2:
+	case 6:
+	case 10:
+	case 14:
+		/* store */
+		op->dest.reg = rn;
+		op->dest.type = OP_DEST_REG_INDIRECT;
+		op->dest.offset = SIGN_EXTEND(imm9, 9);
+		op->src.reg = rt;
+		op->src.type = OP_SRC_REG;
+		op->src.offset = 0;
+		return 0;
+	case 4:
+	case 12:
+		/* load */
+		op->src.reg = rn;
+		op->src.type = OP_SRC_REG_INDIRECT;
+		op->src.offset = SIGN_EXTEND(imm9, 9);
+		op->dest.reg = rt;
+		op->dest.type = OP_DEST_REG;
+		op->dest.offset = 0;
+		return 0;
+	}
+
+	return -1;
 }
