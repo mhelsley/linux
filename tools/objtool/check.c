@@ -279,6 +279,9 @@ static int decode_instructions(struct objtool_file *file)
 		}
 	}
 
+	if (arch_post_process_file(file))
+		return -1;
+
 	return 0;
 
 err:
