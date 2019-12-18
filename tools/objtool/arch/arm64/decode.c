@@ -877,6 +877,11 @@ static struct aarch64_insn_decoder ld_st_decoder[] = {
 	},
 	{
 		.mask = 0b001101010000011,
+		.value = 0b001100010000000,
+		.decode_func = arm_decode_atomic,
+	},
+	{
+		.mask = 0b001101010000011,
 		.value = 0b001100010000010,
 		.decode_func = arm_decode_ld_st_regs_off,
 	},
@@ -1664,6 +1669,87 @@ int arm_decode_ld_st_imm_unpriv(u32 instr, enum insn_type *type,
 		op->src.offset = 0;
 		break;
 	}
+	return 0;
+}
+
+static struct aarch64_insn_decoder atom_unallocs_decoder[] = {
+	{
+		.mask = 0b1001111,
+		.value = 0b0001001,
+	},
+	{
+		.mask = 0b1001110,
+		.value = 0b0001010,
+	},
+	{
+		.mask = 0b1001111,
+		.value = 0b0001101,
+	},
+	{
+		.mask = 0b1001110,
+		.value = 0b0001110,
+	},
+	{
+		.mask = 0b1101111,
+		.value = 0b0001100,
+	},
+	{
+		.mask = 0b1111111,
+		.value = 0b0111100,
+	},
+	{
+		.mask = 0b1000000,
+		.value = 0b1000000,
+	},
+};
+
+int arm_decode_atomic(u32 instr, enum insn_type *type,
+		      unsigned long *immediate,
+		      struct list_head *ops_list)
+{
+	unsigned char V = 0, A = 0, R = 0, o3 = 0, opc = 0;
+	unsigned char rn = 0, rt = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+	int i = 0;
+
+	V = EXTRACT_BIT(instr, 26);
+	A = EXTRACT_BIT(instr, 23);
+	R = EXTRACT_BIT(instr, 22);
+	o3 = EXTRACT_BIT(instr, 15);
+	opc = (instr >> 12) & ONES(3);
+
+	decode_field = (V << 6) | (A << 5) | (R << 4) | (o3 << 3) | opc;
+
+	for (i = 0; i < ARRAY_SIZE(atom_unallocs_decoder); i++) {
+		if ((decode_field & atom_unallocs_decoder[i].mask) ==
+		    atom_unallocs_decoder[i].value) {
+			return arm_decode_unknown(instr,
+						  type,
+						  immediate,
+						  ops_list);
+		}
+	}
+
+	rn = (instr >> 5) & ONES(5);
+	rt = instr & ONES(5);
+
+	if (!stack_related_reg(rn)) {
+		*type = INSN_OTHER;
+		return 0;
+	}
+	*type = INSN_STACK;
+
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+
+	op->src.reg = rn;
+	op->src.type = OP_DEST_REG_INDIRECT;
+	op->src.offset = 0;
+	op->dest.type = OP_DEST_REG;
+	op->dest.reg = rt;
+	op->dest.offset = 0;
+
 	return 0;
 }
 
