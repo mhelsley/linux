@@ -130,6 +130,8 @@ int arm_decode_ld_st_imm_unpriv(u32 instr, enum insn_type *type,
 int arm_decode_ld_st_imm_pre(u32 instr, enum insn_type *type,
 			     unsigned long *immediate,
 			     struct list_head *ops_list);
+int arm_decode_atomic(u32 instr, enum insn_type *type,
+		      unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_ld_st_regs_off(u32 instr, enum insn_type *type,
 			      unsigned long *immediate,
 			      struct list_head *ops_list);
