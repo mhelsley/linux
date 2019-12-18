@@ -136,4 +136,7 @@ int arm_decode_ld_st_regs_off(u32 instr, enum insn_type *type,
 int arm_decode_ld_st_regs_unsigned(u32 instr, enum insn_type *type,
 				   unsigned long *immediate,
 				   struct list_head *ops_list);
+int arm_decode_ld_st_exclusive(u32 instr, enum insn_type *type,
+			       unsigned long *immediate,
+			       struct list_head *ops_list);
 #endif /* _ARM_INSN_DECODE_H */

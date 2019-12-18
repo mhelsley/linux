@@ -831,6 +831,11 @@ static struct aarch64_insn_decoder ld_st_decoder[] = {
 		.decode_func = arm_decode_adv_simd_single_post,
 	},
 	{
+		.mask = 0b001111000000000,
+		.value = 0b000000000000000,
+		.decode_func = arm_decode_ld_st_exclusive,
+	},
+	{
 		.mask = 0b001101100000000,
 		.value = 0b001000000000000,
 		.decode_func = arm_decode_ld_st_noalloc_pair_off,
@@ -1189,6 +1194,141 @@ int arm_decode_adv_simd_single_post(u32 instr, enum insn_type *type,
 	/* TODO: Create stack_op for post increment with immediate */
 	return ret;
 }
+
+#define ST_EXCL_UNALLOC_1 0b001010
+#define ST_EXCL_UNALLOC_2 0b000010
+
+#define LDXRB		0b000100
+#define LDAXRB		0b000101
+#define LDLARB		0b001100
+#define LDARB		0b001101
+#define LDXRH		0b010100
+#define LDAXRH		0b010101
+#define LDLARH		0b011100
+#define LDARH		0b011101
+#define LDXR		0b100100
+#define LDAXR		0b100101
+#define LDXP		0b100110
+#define LDAXP		0b100111
+#define LDLAR		0b101100
+#define LDAR		0b101101
+#define LDXR_64		0b110100
+#define LDAXR_64	0b110101
+#define LDXP_64		0b110110
+#define LDAXP_64	0b110111
+#define LDLAR_64	0b111100
+#define LDAR_64		0b111101
+
+#define LD_EXCL_NUMBER	20
+
+static int ld_excl_masks[] = {
+	LDXRB,
+	LDAXRB,
+	LDLARB,
+	LDARB,
+	LDXRH,
+	LDAXRH,
+	LDLARH,
+	LDARH,
+	LDXR,
+	LDAXR,
+	LDXP,
+	LDAXP,
+	LDLAR,
+	LDAR,
+	LDXR_64,
+	LDAXR_64,
+	LDXP_64,
+	LDAXP_64,
+	LDLAR_64,
+	LDAR_64,
+};
+
+int arm_decode_ld_st_exclusive(u32 instr, enum insn_type *type,
+			       unsigned long *immediate,
+			       struct list_head *ops_list)
+{
+	unsigned char size = 0, o2 = 0, L = 0, o1 = 0, o0 = 0;
+	unsigned char rt = 0, rt2 = 0, rn = 0;
+	unsigned char decode_field = 0;
+	struct stack_op *op;
+	int i = 0;
+
+	size = (instr >> 30) & ONES(2);
+	o2 = EXTRACT_BIT(instr, 23);
+	L = EXTRACT_BIT(instr, 22);
+	o1 = EXTRACT_BIT(instr, 21);
+	o0 = EXTRACT_BIT(instr, 15);
+
+	rt2 = (instr >> 10) & ONES(5);
+	rn = (instr >> 5) & ONES(5);
+	rt = instr & ONES(5);
+
+	decode_field = (size << 4) | (o2 << 3) | (L << 2) | (o1 << 1) | o0;
+
+	if ((decode_field & ST_EXCL_UNALLOC_1) == ST_EXCL_UNALLOC_1 ||
+	    (decode_field & 0b101010) == ST_EXCL_UNALLOC_2) {
+		if (rt2 != 31)
+			return arm_decode_unknown(instr, type, immediate,
+						  ops_list);
+	}
+
+	if (!stack_related_reg(rn)) {
+		*type = INSN_OTHER;
+		return 0;
+	}
+
+	*type = INSN_STACK;
+	op = calloc(1, sizeof(*op));
+	list_add_tail(&op->list, ops_list);
+
+	for (i = 0; i < LD_EXCL_NUMBER; i++) {
+		if ((decode_field & 0b111111) == ld_excl_masks[i]) {
+			op->src.type = OP_SRC_REG_INDIRECT;
+			op->src.reg = rn;
+			op->src.offset = 0;
+			op->dest.type = OP_DEST_REG;
+			op->dest.reg = rt;
+			op->dest.offset = 0;
+			return 0;
+		}
+	}
+
+	op->dest.type = OP_DEST_REG_INDIRECT;
+	op->dest.reg = rn;
+	op->dest.offset = 0;
+	op->src.type = OP_SRC_REG;
+	op->src.reg = rt;
+	op->src.offset = 0;
+
+	return 0;
+}
+
+#undef ST_EXCL_UNALLOC_1
+#undef ST_EXCL_UNALLOC_2
+
+#undef LD_EXCL_NUMBER
+
+#undef LDXRB
+#undef LDAXRB
+#undef LDLARB
+#undef LDARB
+#undef LDXRH
+#undef LDAXRH
+#undef LDLARH
+#undef LDARH
+#undef LDXR
+#undef LDAXR
+#undef LDXP
+#undef LDAXP
+#undef LDLAR
+#undef LDAR
+#undef LDXR_64
+#undef LDAXR_64
+#undef LDXP_64
+#undef LDAXP_64
+#undef LDLAR_64
+#undef LDAR_64
 
 int arm_decode_ld_st_regs_unsc_imm(u32 instr, enum insn_type *type,
 				   unsigned long *immediate,
