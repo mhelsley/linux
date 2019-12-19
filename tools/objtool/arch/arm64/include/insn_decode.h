@@ -16,6 +16,8 @@
 #define INSN_LD_ST_E	0b1110	//0bx1x0
 #define INSN_DP_REG_5	0b0101	//0bx101
 #define INSN_DP_REG_D	0b1101	//0bx101
+#define INSN_DP_SIMD_7	0b0111	//0bx111
+#define INSN_DP_SIMD_F	0b1111	//0bx111
 
 #define NR_INSN_CLASS	16
 #define INSN_CLASS(opcode)	(((opcode) >> 25) & (NR_INSN_CLASS - 1))
@@ -47,6 +49,8 @@ int arm_decode_br_sys(u32 instr, enum insn_type *type,
 		      unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_ld_st(u32 instr, enum insn_type *type,
 		     unsigned long *immediate, struct list_head *ops_list);
+int arm_decode_dp_simd(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_unknown(u32 instr, enum insn_type *type,
 		       unsigned long *immediate, struct list_head *ops_list);
 
