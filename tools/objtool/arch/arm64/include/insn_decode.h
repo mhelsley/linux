@@ -7,6 +7,7 @@
 
 #define INSN_RESERVED	0b0000
 #define INSN_UNKNOWN	0b0001
+#define INSN_SVE_ENC	0b0010
 #define INSN_UNALLOC	0b0011
 #define INSN_DP_IMM	0b1001	//0x100x
 #define INSN_SYS_BRANCH	0b1011	//0x101x
@@ -41,6 +42,9 @@ struct aarch64_insn_decoder {
 };
 
 /* arm64 instruction classes */
+int arm_decode_sve_encoding(u32 instr, enum insn_type *type,
+			    unsigned long *immediate,
+			    struct list_head *ops_list);
 int arm_decode_dp_imm(u32 instr, enum insn_type *type,
 		      unsigned long *immediate, struct list_head *ops_list);
 int arm_decode_dp_reg(u32 instr, enum insn_type *type,

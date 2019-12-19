@@ -126,6 +126,7 @@ static int is_arm64(struct elf *elf)
 static arm_decode_class aarch64_insn_class_decode_table[NR_INSN_CLASS] = {
 	[INSN_RESERVED]			= arm_decode_unknown,
 	[INSN_UNKNOWN]			= arm_decode_unknown,
+	[INSN_SVE_ENC]			= arm_decode_sve_encoding,
 	[INSN_UNALLOC]			= arm_decode_unknown,
 	[INSN_LD_ST_4]			= arm_decode_ld_st,
 	[INSN_DP_REG_5]			= arm_decode_dp_reg,
@@ -2753,5 +2754,113 @@ int arm_decode_dp_simd(u32 instr, enum insn_type *type,
 		       unsigned long *immediate, struct list_head *ops_list)
 {
 	*type = INSN_OTHER;
+	return 0;
+}
+
+static struct aarch64_insn_decoder sve_enc_decoder[] = {
+	{
+		.mask = 0b1111010000111000,
+		.value = 0b0000010000011000,
+	},
+	{
+		.mask = 0b1111110000111000,
+		.value = 0b0001110000000000,
+	},
+	{
+		.mask = 0b1111010000110000,
+		.value = 0b0011010000010000,
+	},
+	{
+		.mask = 0b1111011100111000,
+		.value = 0b0011010100101000,
+	},
+	{
+		.mask = 0b1111011000110000,
+		.value = 0b0011011000100000,
+	},
+	{
+		.mask = 0b1111010000100000,
+		.value = 0b0100000000100000,
+	},
+	{
+		.mask = 0b1111000000000000,
+		.value = 0b0101000000000000,
+	},
+	{
+		.mask = 0b1111011111111000,
+		.value = 0b0110000000101000,
+	},
+	{
+		.mask = 0b1111011111110000,
+		.value = 0b0110000000110000,
+	},
+	{
+		.mask = 0b1111011111100000,
+		.value = 0b0110000001100000,
+	},
+	{
+		.mask = 0b1111011110100000,
+		.value = 0b0110000010100000,
+	},
+	{
+		.mask = 0b1111011100100000,
+		.value = 0b0110000100100000,
+	},
+	{
+		.mask = 0b1111011000100000,
+		.value = 0b0110001000100000,
+	},
+	{
+		.mask = 0b1111010000110110,
+		.value = 0b0110010000000010,
+	},
+	{
+		.mask = 0b1111010000111111,
+		.value = 0b0110010000001001,
+	},
+	{
+		.mask = 0b1111010000111100,
+		.value = 0b0110010000001100,
+	},
+	{
+		.mask = 0b1111010000110000,
+		.value = 0b0110010000010000,
+	},
+	{
+		.mask = 0b1111010000100000,
+		.value = 0b0110010000100000,
+	},
+	{
+		.mask = 0b1111011100111100,
+		.value = 0b0111000100001000,
+	},
+};
+
+int arm_decode_sve_encoding(u32 instr, enum insn_type *type,
+			    unsigned long *immediate,
+			    struct list_head *ops_list)
+{
+	int i = 0;
+	unsigned char op0 = 0, op1 = 0, op2 = 0, op3 = 0;
+	u32 decode_field = 0;
+
+	op0 = (instr >> 29) & ONES(3);
+	op1 = (instr >> 23) & ONES(2);
+	op2 = (instr >> 17) & ONES(5);
+	op3 = (instr >> 10) & ONES(6);
+
+	decode_field = (op0 << 2) | op1;
+	decode_field = (decode_field << 5) | op2;
+	decode_field = (decode_field << 6) | op3;
+
+	for (i = 0; i < ARRAY_SIZE(sve_enc_decoder); i++) {
+		if ((decode_field & sve_enc_decoder[i].mask) ==
+		    sve_enc_decoder[i].value)
+			return arm_decode_unknown(instr, type, immediate,
+						  ops_list);
+	}
+
+	*type = INSN_OTHER;
+
 	return 0;
 }
