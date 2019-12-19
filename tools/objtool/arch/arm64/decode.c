@@ -130,11 +130,13 @@ static arm_decode_class aarch64_insn_class_decode_table[NR_INSN_CLASS] = {
 	[INSN_LD_ST_4]			= arm_decode_ld_st,
 	[INSN_DP_REG_5]			= arm_decode_dp_reg,
 	[INSN_LD_ST_6]			= arm_decode_ld_st,
+	[INSN_DP_SIMD_7]		= arm_decode_dp_simd,
 	[0b1000 ... INSN_DP_IMM]	= arm_decode_dp_imm,
 	[0b1010 ... INSN_SYS_BRANCH]	= arm_decode_br_sys,
 	[INSN_LD_ST_C]			= arm_decode_ld_st,
 	[INSN_DP_REG_D]			= arm_decode_dp_reg,
 	[INSN_LD_ST_E]			= arm_decode_ld_st,
+	[INSN_DP_SIMD_F]		= arm_decode_dp_simd,
 };
 
 /*
@@ -2743,6 +2745,13 @@ int arm_decode_dp_reg_3src(u32 instr, enum insn_type *type,
 		}
 	}
 
+	*type = INSN_OTHER;
+	return 0;
+}
+
+int arm_decode_dp_simd(u32 instr, enum insn_type *type,
+		       unsigned long *immediate, struct list_head *ops_list)
+{
 	*type = INSN_OTHER;
 	return 0;
 }
