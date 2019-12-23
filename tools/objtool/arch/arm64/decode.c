@@ -419,6 +419,11 @@ static struct aarch64_insn_decoder br_sys_decoder[] = {
 		.value = 0b1100100010000000000000,
 		.decode_func = arm_decode_system_regs,
 	},
+	{
+		.mask = 0b1111100000000000000000,
+		.value = 0b1100000000000000000000,
+		.decode_func = arm_decode_except_gen,
+	},
 };
 
 int arm_decode_br_sys(u32 instr, enum insn_type *type,
@@ -485,4 +490,44 @@ int arm_decode_system_regs(u32 instr, enum insn_type *type,
 	/* TODO:check unallocated */
 	*type = INSN_OTHER;
 	return 0;
+}
+
+int arm_decode_except_gen(u32 instr, enum insn_type *type,
+			  unsigned long *immediate, struct list_head *ops_list)
+{
+	u32 imm16 = 0;
+	unsigned char opc = 0, op2 = 0, LL = 0, decode_field = 0;
+
+	imm16 = (instr >> 5) & ONES(16);
+	opc = (instr >> 21) & ONES(3);
+	op2 = (instr >> 2) & ONES(3);
+	LL = instr & ONES(2);
+	decode_field = (opc << 5) | (op2 << 2) | LL;
+
+#define INSN_SVC	0b00000001
+#define INSN_HVC	0b00000010
+#define INSN_SMC	0b00000011
+
+	switch (decode_field) {
+	case INSN_SVC:
+	case INSN_HVC:
+	case INSN_SMC:
+		/*
+		 * We consider that the context will be restored correctly
+		 * with an unchanged sp and the same general registers
+		 */
+		*type = INSN_NOP;
+		return 0;
+	default:
+		return arm_decode_unknown(instr, type, immediate, ops_list);
+	}
+
+#undef INSN_SVC
+#undef INSN_HVC
+#undef INSN_SMC
+#undef INSN_BRK
+#undef INSN_HLT
+#undef INSN_DCPS1
+#undef INSN_DCPS2
+#undef INSN_DCPS3
 }
