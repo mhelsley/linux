@@ -70,4 +70,6 @@ int arm_decode_system_insn(u32 instr, enum insn_type *type,
 int arm_decode_system_regs(u32 instr, enum insn_type *type,
 			   unsigned long *immediate,
 			   struct list_head *ops_list);
+int arm_decode_except_gen(u32 instr, enum insn_type *type,
+			  unsigned long *immediate, struct list_head *ops_list);
 #endif /* _ARM_INSN_DECODE_H */
