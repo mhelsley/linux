@@ -508,6 +508,10 @@ int arm_decode_except_gen(u32 instr, enum insn_type *type,
 #define INSN_HVC	0b00000010
 #define INSN_SMC	0b00000011
 #define INSN_BRK	0b00100000
+#define INSN_HLT	0b01000000
+#define INSN_DCPS1	0b10100001
+#define INSN_DCPS2	0b10100010
+#define INSN_DCPS3	0b10100011
 
 	switch (decode_field) {
 	case INSN_SVC:
@@ -550,6 +554,13 @@ int arm_decode_except_gen(u32 instr, enum insn_type *type,
 			*type = INSN_CONTEXT_SWITCH;
 			break;
 		}
+		return 0;
+	case INSN_HLT:
+	case INSN_DCPS1:
+	case INSN_DCPS2:
+	case INSN_DCPS3:
+		*immediate = imm16;
+		*type = INSN_CONTEXT_SWITCH;
 		return 0;
 	default:
 		return arm_decode_unknown(instr, type, immediate, ops_list);
