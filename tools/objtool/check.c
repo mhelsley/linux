@@ -1316,6 +1316,7 @@ static bool has_valid_stack_frame(struct insn_state *state)
 	return false;
 }
 
+#ifdef OBJTOOL_ORC
 static int update_insn_state_regs(struct instruction *insn, struct insn_state *state)
 {
 	struct cfi_reg *cfa = &state->cfa;
@@ -1339,6 +1340,7 @@ static int update_insn_state_regs(struct instruction *insn, struct insn_state *s
 
 	return 0;
 }
+#endif
 
 static void save_reg(struct insn_state *state, unsigned char reg, int base,
 		     int offset)
@@ -1424,8 +1426,10 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 		return 0;
 	}
 
+#ifdef OBJTOOL_ORC
 	if (state->type == ORC_TYPE_REGS || state->type == ORC_TYPE_REGS_IRET)
 		return update_insn_state_regs(insn, state);
+#endif
 
 	switch (op->dest.type) {
 
