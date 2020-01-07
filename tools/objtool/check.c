@@ -1175,7 +1175,7 @@ static bool has_modified_stack_frame(struct insn_state *state)
 static bool has_valid_stack_frame(struct insn_state *state)
 {
 	if (state->cfa.base == CFI_BP && state->regs[CFI_BP].base == CFI_CFA &&
-	    state->regs[CFI_BP].offset == -16)
+	    state->regs[CFI_BP].offset == -state->cfa.offset)
 		return true;
 
 	if (state->drap && state->regs[CFI_BP].base == CFI_BP)
