@@ -1506,6 +1506,12 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state)
 				cfa->base = state->drap_reg;
 				cfa->offset = 0;
 				state->drap_offset = -1;
+			} else if (!state->drap && op->src.reg == CFI_SP &&
+				op->dest.reg == cfa->base) {
+
+				/* mov disp(%rsp), %rbp */
+				cfa->base = CFI_SP;
+				cfa->offset += op->src.offset;
 			}
 
 			if (state->drap && op->src.reg == CFI_BP &&
