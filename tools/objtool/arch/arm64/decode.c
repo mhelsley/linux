@@ -1518,7 +1518,7 @@ int arm_decode_ld_st_regs_unsc_imm(u32 instr, enum insn_type *type,
 		op->dest.type = OP_DEST_REG_INDIRECT;
 		op->dest.reg = rn;
 		op->dest.offset = SIGN_EXTEND(imm9, 9);
-		op->src.type = OP_DEST_REG;
+		op->src.type = OP_SRC_REG;
 		op->src.reg = rt;
 		op->src.offset = 0;
 		break;
@@ -1605,7 +1605,7 @@ int arm_decode_ld_st_regs_unsigned(u32 instr, enum insn_type *type,
 		op->dest.type = OP_DEST_REG_INDIRECT;
 		op->dest.reg = rn;
 		op->dest.offset = imm12;
-		op->src.type = OP_DEST_REG;
+		op->src.type = OP_SRC_REG;
 		op->src.reg = rt;
 		op->src.offset = 0;
 	}
@@ -1772,7 +1772,7 @@ int arm_decode_ld_st_imm_unpriv(u32 instr, enum insn_type *type,
 		op->dest.type = OP_DEST_REG_INDIRECT;
 		op->dest.reg = rn;
 		op->dest.offset = SIGN_EXTEND(imm9, 9);
-		op->src.type = OP_DEST_REG;
+		op->src.type = OP_SRC_REG;
 		op->src.reg = rt;
 		op->src.offset = 0;
 		break;
