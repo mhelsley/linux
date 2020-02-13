@@ -11,6 +11,10 @@ arch/x86/include/asm/emulate_prefix.h
 arch/x86/lib/x86-opcode-map.txt
 arch/x86/tools/gen-insn-attr-x86.awk
 '
+elif [ $TARGET_ARCH == "arm64" ]; then
+FILES='
+arch/arm64/include/asm/aarch64-insn.h
+'
 fi
 
 check_2 () {
@@ -53,4 +57,6 @@ if [ $TARGET_ARCH == "x86" ]; then
     check arch/x86/include/asm/insn.h     '-I "^#include [\"<]\(asm/\)*inat.h[\">]"'
     check arch/x86/lib/inat.c             '-I "^#include [\"<]\(../include/\)*asm/insn.h[\">]"'
     check arch/x86/lib/insn.c             '-I "^#include [\"<]\(../include/\)*asm/in\(at\|sn\).h[\">]" -I "^#include [\"<]\(../include/\)*asm/emulate_prefix.h[\">]"'
+elif [ $TARGET_ARCH == "arm64" ]; then
+    check arch/arm64/lib/aarch64-insn.c   '-I "^#include [\"<]\(asm/\)*kprobes.h[\">]"'
 fi

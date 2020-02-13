@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <asm/aarch64-insn.h>
+
 #include "insn_decode.h"
 #include "cfi_regs.h"
 #include "bit_operations.h"
@@ -12,6 +14,13 @@
 #include "../../arch.h"
 #include "../../elf.h"
 #include "../../warn.h"
+
+/* Hack needed to avoid depending on kprobes.h */
+#ifndef __kprobes
+#define __kprobes
+#endif
+
+#include "../../../arch/arm64/lib/aarch64-insn.c"
 
 static bool stack_related_reg(int reg)
 {
@@ -116,6 +125,7 @@ static int is_arm64(struct elf *elf)
 	}
 }
 
+#if 0
 /*
  * static int (*arm_decode_class)(u32 instr,
  *				 unsigned int *len,
@@ -139,6 +149,244 @@ static arm_decode_class aarch64_insn_class_decode_table[NR_INSN_CLASS] = {
 	[INSN_LD_ST_E]			= arm_decode_ld_st,
 	[INSN_DP_SIMD_F]		= arm_decode_dp_simd,
 };
+#endif
+
+static struct stack_op *arm_make_store_op(enum aarch64_insn_register base,
+					  enum aarch64_insn_register reg,
+					  int offset)
+{
+	struct stack_op *op;
+
+	op = calloc(1, sizeof(*op));
+	op->dest.type = OP_DEST_REG_INDIRECT;
+	op->dest.reg = base;
+	op->dest.offset = offset;
+	op->src.type = OP_SRC_REG;
+	op->src.reg = reg;
+	op->src.offset = 0;
+
+	return op;
+}
+
+static struct stack_op *arm_make_load_op(enum aarch64_insn_register base,
+					 enum aarch64_insn_register reg,
+					 int offset)
+{
+	struct stack_op *op;
+
+	op = calloc(1, sizeof(*op));
+	op->dest.type = OP_DEST_REG;
+	op->dest.reg = reg;
+	op->dest.offset = 0;
+	op->src.type = OP_SRC_REG_INDIRECT;
+	op->src.reg = base;
+	op->src.offset = offset;
+
+	return op;
+}
+
+static struct stack_op *arm_make_add_op(enum aarch64_insn_register dest,
+					enum aarch64_insn_register src,
+					int val)
+{
+	struct stack_op *op;
+
+	op = calloc(1, sizeof(*op));
+	op->dest.type = OP_DEST_REG;
+	op->dest.reg = dest;
+	op->src.reg = src;
+	op->src.type = val != 0 ? OP_SRC_ADD : OP_SRC_REG;
+	op->src.offset = val;
+
+	return op;
+}
+
+static struct stack_op *arm_make_mov_op(enum aarch64_insn_register dest,
+					enum aarch64_insn_register src)
+{
+	return arm_make_add_op(dest, src, 0);
+}
+
+/* TODO: move to aarch64-insn.h */
+static bool aarch64_insn_is_store_single(u32 insn)
+{
+	return aarch64_insn_is_store_imm(insn) ||
+	       aarch64_insn_is_store_pre(insn) ||
+	       aarch64_insn_is_store_post(insn);
+}
+
+/* TODO: move to aarch64-insn.h */
+static bool aarch64_insn_is_store_pair(u32 insn)
+{
+	return aarch64_insn_is_stp(insn) ||
+	       aarch64_insn_is_stp_pre(insn) ||
+	       aarch64_insn_is_stp_post(insn);
+}
+
+/* TODO: move to aarch64-insn.h */
+static bool aarch64_insn_is_load_single(u32 insn)
+{
+	return aarch64_insn_is_load_imm(insn) ||
+	       aarch64_insn_is_load_pre(insn) ||
+	       aarch64_insn_is_load_post(insn);
+}
+
+/* TODO: move to aarch64-insn.h */
+static bool aarch64_insn_is_load_pair(u32 insn)
+{
+	return aarch64_insn_is_ldp(insn) ||
+	       aarch64_insn_is_ldp_pre(insn) ||
+	       aarch64_insn_is_ldp_post(insn);
+}
+
+static bool arm_decode_load_store(u32 insn, enum insn_type *type,
+				  unsigned long *immediate,
+				  struct list_head *ops_list)
+{
+	enum aarch64_insn_register base;
+	enum aarch64_insn_register rt;
+	struct stack_op *op;
+	int size;
+	int offset;
+
+
+	if (aarch64_insn_is_store_single(insn) ||
+	    aarch64_insn_is_load_single(insn))
+		size = 1 << ((insn & GENMASK(31,30)) >> 30);
+	else
+		size = 4 << EXTRACT_BIT(insn, 31);
+
+	if (aarch64_insn_is_store_imm(insn) || aarch64_insn_is_load_imm(insn))
+		*immediate = size * aarch64_insn_decode_immediate(AARCH64_INSN_IMM_12,
+								  insn);
+	else if (aarch64_insn_is_store_pre(insn) ||
+		 aarch64_insn_is_load_pre(insn) ||
+		 aarch64_insn_is_store_post(insn) ||
+		 aarch64_insn_is_load_post(insn))
+		*immediate = SIGN_EXTEND(aarch64_insn_decode_immediate(AARCH64_INSN_IMM_9,
+								       insn),
+					 9);
+	else if (aarch64_insn_is_stp(insn) || aarch64_insn_is_ldp(insn) ||
+		 aarch64_insn_is_stp_pre(insn) ||
+		 aarch64_insn_is_ldp_pre(insn) ||
+		 aarch64_insn_is_stp_post(insn) ||
+		 aarch64_insn_is_ldp_post(insn))
+		*immediate = size * SIGN_EXTEND(aarch64_insn_decode_immediate(AARCH64_INSN_IMM_7,
+									      insn),
+						7);
+	else
+		return false;
+
+	base = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RN, insn);
+	if (!stack_related_reg(base)) {
+		*type = INSN_OTHER;
+		return true;
+	} else {
+		*type = INSN_STACK;
+	}
+
+	if (aarch64_insn_is_store_post(insn) || aarch64_insn_is_load_post(insn) ||
+	    aarch64_insn_is_stp_post(insn) || aarch64_insn_is_ldp_post(insn))
+		offset = 0;
+	else
+		offset = *immediate;
+
+	/* First register */
+	rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
+	if (aarch64_insn_is_store_single(insn) ||
+	    aarch64_insn_is_store_pair(insn))
+		op = arm_make_store_op(base, rt, offset);
+	else
+		op = arm_make_load_op(base, rt, offset);
+	list_add_tail(&op->list, ops_list);
+
+	/* Second register (if present) */
+	if (aarch64_insn_is_store_pair(insn) ||
+	    aarch64_insn_is_load_pair(insn)) {
+		rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT2,
+						  insn);
+		if (aarch64_insn_is_store_pair(insn))
+			op = arm_make_store_op(base, rt, offset + size);
+		else
+			op = arm_make_load_op(base, rt, offset + size);
+		list_add_tail(&op->list, ops_list);
+	}
+
+	/* Handle write-back */
+	if (aarch64_insn_is_store_pre(insn) || aarch64_insn_is_load_pre(insn) ||
+	    aarch64_insn_is_ldp_pre(insn) || aarch64_insn_is_stp_pre(insn) ||
+	    aarch64_insn_is_store_post(insn) || aarch64_insn_is_load_post(insn) ||
+	    aarch64_insn_is_stp_post(insn) || aarch64_insn_is_ldp_post(insn)) {
+		op = arm_make_add_op(base, base, *immediate);
+		list_add_tail(&op->list, ops_list);
+	}
+
+	return true;
+}
+
+static void arm_decode_add_sub_imm(u32 instr, bool set_flags,
+				   enum insn_type *type,
+				   unsigned long *immediate,
+				   struct list_head *ops_list)
+{
+	u32 rd = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RD, instr);
+	u32 rn = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RN, instr);
+
+	*type = INSN_OTHER;
+	*immediate = aarch64_insn_decode_immediate(AARCH64_INSN_IMM_12, instr);
+
+	if (instr & AARCH64_INSN_LSL_12)
+		*immediate <<= 12;
+
+	if ((!set_flags && rd == AARCH64_INSN_REG_SP) ||
+	    rd == AARCH64_INSN_REG_FP || stack_related_reg(rn)) {
+		struct stack_op *op;
+		int value;
+
+		*type = INSN_STACK;
+		if (aarch64_insn_is_subs_imm(instr) || aarch64_insn_is_sub_imm(instr))
+			value = -*immediate;
+		else
+			value = *immediate;
+
+		op = arm_make_add_op(rd, rn, value);
+		list_add_tail(&op->list, ops_list);
+	}
+}
+
+static void arm_decode_brk(u32 insn, enum insn_type *type, unsigned long *immediate)
+{
+	*immediate = aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16, insn);
+	switch (*immediate) {
+	case 0x004: /* KPROBES_BRK_IMM */
+	case 0x005: /* UPROBES_BRK_IMM */
+	case 0x400: /* KGDB_DYN_DBG_BRK_IMM */
+	case 0x401: /* KGDB_COMPILED_DBG_BRK_IMM */
+		*type = INSN_OTHER;
+		break;
+	case 0x800: /* BUG_BRK_IMM */
+		/*
+		 * brk #0x800 is generated by the BUG()/WARN() linux API
+		 * and is thus a particular case. Since those are not
+		 * necessarily compiled in, the surrounding code should
+		 * work properly without it. We thus consider it as a
+		 * nop.
+		 */
+		*type = INSN_NOP;
+		break;
+	case 0x3e8:
+		/*
+		 * Similar to the use of "ud2" on x86, GCC inserts
+		 * "brk #0x38e" instructions for certain divide-by-zero
+		 * cases.
+		 */
+		*type = INSN_BUG;
+		break;
+	default:
+		*type = INSN_CONTEXT_SWITCH;
+		break;
+	}
+}
 
 /*
  * Arm A64 Instruction set' decode groups (based on op0 bits[28:25]):
@@ -157,37 +405,168 @@ int arch_decode_instruction(struct elf *elf, struct section *sec,
 			    unsigned long *immediate,
 			    struct list_head *ops_list)
 {
-	arm_decode_class decode_fun;
-	int arm64 = 0;
-	u32 insn = 0;
-	int res;
+//	arm_decode_class decode_fun;
+	u32 insn;
 
-	*len = 4;
+	*len = AARCH64_INSN_SIZE;
 	*immediate = 0;
 
 	//test architucture (make sure it is arm64)
-	arm64 = is_arm64(elf);
-	if (arm64 != 1)
+	if (!is_arm64(elf))
 		return -1;
 
 	//retrieve instruction (from sec->data->offset)
 	insn = *(u32 *)(sec->data->d_buf + offset);
 
+	switch (aarch64_get_insn_class(insn)) {
+#if 0
+		- mov [bp || sp], truc;
+		- mov truc, [bp || sp];
+#endif
+	case AARCH64_INSN_CLS_UNKNOWN:
+		/*
+		 * There are a few reasons we might have non-valid opcodes in
+		 * code sections:
+		 * - For load literal, assembler can generate the data to be
+		 *   loaded in the code section
+		 * - Compiler/assembler can generate zeroes to pad function that
+		 *   do not end on 8-byte alignment
+		 * - Hand written assembly code might contain constants in the
+		 *   code section
+		 */
+		*type = INSN_INVALID;
+		break;
+	case AARCH64_INSN_CLS_DP_IMM:
+		/* Mov register to and from SP are aliases of add_imm */
+		if (aarch64_insn_is_add_imm(insn) ||
+		    aarch64_insn_is_sub_imm(insn)) {
+			arm_decode_add_sub_imm(insn, false, type, immediate,
+					       ops_list);
+		}
+		else if (aarch64_insn_is_adds_imm(insn) ||
+			 aarch64_insn_is_subs_imm(insn)) {
+			arm_decode_add_sub_imm(insn, true, type, immediate,
+					       ops_list);
+		} else if (aarch64_insn_is_and_imm(insn) &&
+			   aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RN, insn) == AARCH64_INSN_REG_SP &&
+			   aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RD, insn) == AARCH64_INSN_REG_SP) {
+			struct stack_op *op;
+
+			*immediate = aarch64_insn_decode_immediate(AARCH64_INSN_IMM_R, insn) |
+				     aarch64_insn_decode_immediate(AARCH64_INSN_IMM_S, insn) << 6;
+			if (insn & BIT(31) && insn & BIT(22))
+				*immediate |= BIT(16);
+			op = calloc(1, sizeof(*op));
+			op->dest.reg = CFI_SP;
+			op->dest.type = OP_DEST_REG;
+			op->src.reg = CFI_SP;
+			op->src.type = OP_SRC_AND;
+			list_add_tail(&op->list, ops_list);
+			*type = INSN_STACK;
+		} else if (aarch64_insn_is_adr(insn) || aarch64_insn_is_adrp(insn)) {
+			*immediate = SIGN_EXTEND(aarch64_insn_decode_immediate(AARCH64_INSN_IMM_ADR, insn),
+				                 21);
+			if (aarch64_insn_is_adrp(insn))
+				*immediate *= 4096;
+			*type = INSN_OTHER;
+		} else {
+			*type = INSN_OTHER;
+		}
+		break;
+	case AARCH64_INSN_CLS_DP_REG:
+		/* mov reg1, reg2 is an alias of orr */
+		if (aarch64_insn_is_mov_reg(insn)) {
+			enum aarch64_insn_register rd;
+			enum aarch64_insn_register rm;
+
+			rd = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RD, insn);
+			rm = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RM, insn);
+			if (rd == AARCH64_INSN_REG_FP || rm == AARCH64_INSN_REG_FP) {
+				struct stack_op *op;
+
+				op = arm_make_mov_op(rd, rm);
+				list_add_tail(&op->list, ops_list);
+				*type = INSN_STACK;
+				break;
+			}
+		}
+		*type = INSN_OTHER;
+		break;
+	case AARCH64_INSN_CLS_BR_SYS:
+		if (aarch64_insn_is_ret(insn) &&
+		    aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RN, insn) == AARCH64_INSN_REG_LR) {
+			*type = INSN_RETURN;
+		} else if (aarch64_insn_is_bl(insn)) {
+			*type = INSN_CALL;
+			*immediate = aarch64_get_branch_offset(insn);
+		} else if (aarch64_insn_is_blr(insn)) {
+			*type = INSN_CALL_DYNAMIC;
+		} else if (aarch64_insn_is_b(insn)) {
+			*type = INSN_JUMP_UNCONDITIONAL;
+			*immediate = aarch64_get_branch_offset(insn);
+		} else if (aarch64_insn_is_br(insn)) {
+			*type = INSN_JUMP_DYNAMIC;
+		} else if (aarch64_insn_is_branch_imm(insn)) {
+			/* Remaining branch opcodes are conditional */
+			*type = INSN_JUMP_CONDITIONAL;
+			*immediate = aarch64_get_branch_offset(insn);
+		} else if (aarch64_insn_is_eret(insn)) {
+			*type = INSN_CONTEXT_SWITCH;
+		} else if (aarch64_insn_is_nop(insn)) {
+			*type = INSN_NOP;
+		} else if (aarch64_insn_is_brk(insn)) {
+			arm_decode_brk(insn, type, immediate);
+		} else {
+			*type = INSN_OTHER;
+		}
+		break;
+	case AARCH64_INSN_CLS_LDST:
+		if (arm_decode_load_store(insn, type, immediate, ops_list))
+			break;
+		if (aarch64_insn_is_ldr_lit(insn)) {
+			struct insn_loc *loc;
+			long pc_offset;
+
+			pc_offset = insn & GENMASK(23, 5);
+			/* Sign extend and multiply by 4 */
+			pc_offset = (pc_offset << (64 - 23));
+			pc_offset = ((pc_offset >> (64 - 23)) >> 5) << 2;
+
+			loc = malloc(sizeof(*loc));
+			loc->sec = sec;
+			loc->offset = offset + pc_offset;
+			hash_add(text_constants, &loc->hnode, loc->offset);
+
+			/* 64-bit literal */
+			if (insn & BIT(30)) {
+				loc = malloc(sizeof(*loc));
+				loc->sec = sec;
+				loc->offset = offset + pc_offset + 4;
+				hash_add(text_constants, &loc->hnode, loc->offset);
+			}
+		}
+		*type = INSN_OTHER;
+		break;
+	default:
+		*type = INSN_OTHER;
+		break;
+	}
+
 	current_location.sec = sec;
 	current_location.offset = offset;
 	//dispatch according to encoding classes
-	decode_fun = aarch64_insn_class_decode_table[INSN_CLASS(insn)];
-	if (decode_fun)
-		res = decode_fun(insn, type, immediate, ops_list);
-	else
-		res = -1;
+	//decode_fun = aarch64_insn_class_decode_table[INSN_CLASS(insn)];
+	//if (decode_fun)
+	//	res = decode_fun(insn, type, immediate, ops_list);
+	//else
+	//	res = -1;
 
-	if (res)
-		WARN_FUNC("Unsupported instruction", sec, offset);
+	//if (res)
+	//	WARN_FUNC("Unsupported instruction", sec, offset);
 
 	memset(&current_location, 0, sizeof(current_location));
 
-	return res;
+	return 0;
 }
 
 int arm_decode_unknown(u32 instr, enum insn_type *type,

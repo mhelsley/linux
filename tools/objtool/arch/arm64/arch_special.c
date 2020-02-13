@@ -3,11 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <asm/aarch64-insn.h>
+
 #include "../../special.h"
 #include "../../warn.h"
 #include "arch_special.h"
 #include "bit_operations.h"
-#include "insn_decode.h"
 
 /*
  * The arm64_switch_table_detection_plugin generate an array of elements
@@ -26,7 +27,7 @@ static bool insn_is_adr_pcrel(struct instruction *insn)
 {
 	u32 opcode = *(u32 *)(insn->sec->data->d_buf + insn->offset);
 
-	return ((opcode >> 24) & 0x1f) == 0x10;
+	return aarch64_insn_is_adr(opcode) || aarch64_insn_is_adrp(opcode);
 }
 
 static s64 next_offset(void *table, u8 entry_size, bool is_signed)
