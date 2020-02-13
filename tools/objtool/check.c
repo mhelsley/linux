@@ -1289,6 +1289,19 @@ static void restore_reg(struct insn_state *state, unsigned char reg)
 	state->regs[reg].offset = initial_func_cfi.regs[reg].offset;
 }
 
+static void cfa_reg_overwrite(struct insn_state *state)
+{
+	/* Try to reset to SP */
+	if (!state->drap && state->cfa.base != initial_func_cfi.cfa.base &&
+	    initial_func_cfi.cfa.base == CFI_SP) {
+		state->cfa.base = CFI_SP;
+		state->cfa.offset = state->stack_size;
+	} else {
+		state->cfa.base = CFI_UNDEFINED;
+		state->cfa.offset = 0;
+	}
+}
+
 /*
  * A note about DRAP stack alignment:
  *
@@ -1432,8 +1445,7 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state,
 					state->stack_size = cfa->offset;
 
 				} else {
-					cfa->base = CFI_UNDEFINED;
-					cfa->offset = 0;
+					cfa_reg_overwrite(state);
 				}
 			}
 
@@ -1537,7 +1549,7 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state,
 			if (!state->drap && op->dest.reg == cfa->base) {
 
 				/* pop %rbp */
-				cfa->base = CFI_SP;
+				cfa_reg_overwrite(state);
 			}
 
 			if (state->drap && cfa->base == CFI_BP_INDIRECT &&
@@ -1569,12 +1581,10 @@ static int update_insn_state(struct instruction *insn, struct insn_state *state,
 				cfa->base = state->drap_reg;
 				cfa->offset = 0;
 				state->drap_offset = -1;
-			} else if (!state->drap && op->src.reg == CFI_SP &&
-				op->dest.reg == cfa->base) {
+			} else if (op->dest.reg == cfa->base) {
 
-				/* mov disp(%rsp), %rbp */
-				cfa->base = CFI_SP;
-				cfa->offset += op->src.offset;
+				/* mov disp(%reg), %rbp */
+				cfa_reg_overwrite(state);
 			}
 
 			if (state->drap && op->src.reg == CFI_BP &&
