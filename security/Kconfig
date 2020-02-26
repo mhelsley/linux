@@ -19,6 +19,37 @@ config SECURITY_DMESG_RESTRICT
 
 	  If you are unsure how to answer this question, answer N.
 
+config WHITELIST_MKNOD_CHAR_DEVICES
+	bool "Enable unprivileged mknod(2) of whitelisted character devices"
+	help
+	  This allows unprivileged users to make device nodes for a
+	  restricted subset of character devices.
+	  This supercedes CAP_MKNOD -- users do not need CAP_MKNOD in
+	  order to make these filesystem nodes -- but DOES NOT supercede
+	  restrictions imposed by device cgroups, security modules,
+	  special filesystem implementations of mknod operations, or
+	  seccomp.
+
+	  Whitelisted char devices have all of these properties that make them
+	  safer than other mknod(2)-created device nodes:
+	  - Limited on-disk size (Most/all regular files will take more space)
+	  - Limited in-memory effective size
+	  - Pseudo devices/RAM access only
+	  - Volatile (userspace doesn't expect device contents to persist)
+	  - Insanely-low CPU usage for file operations
+	  - Contents are/may as well be private
+	  - Incredibly simple semantics
+	  - Widely available, widely used
+	  - Enabling/restricting them with device cgroups is rarely if ever
+	    desirable. Enabling because device cgroups require privilege
+	    or insane contortions for the privlege
+	    and disabling becuase of the other above properties.
+
+	  Whitelist contents:
+	  /dev/null, /dev/zero, and /dev/full
+
+	  If you are unsure how to answer this question, answer N.
+
 config SECURITY
 	bool "Enable different security models"
 	depends on SYSFS

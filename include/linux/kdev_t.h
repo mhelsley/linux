@@ -3,6 +3,9 @@
 #define _LINUX_KDEV_T_H
 
 #include <uapi/linux/kdev_t.h>
+#include <uapi/linux/major.h>
+#include <uapi/linux/mem_minor.h>
+#include <uapi/linux/stat.h>
 
 #define MINORBITS	20
 #define MINORMASK	((1U << MINORBITS) - 1)
@@ -79,5 +82,36 @@ static inline unsigned sysv_minor(u32 dev)
 {
 	return dev & 0x3ffff;
 }
+
+#ifdef CONFIG_WHITELIST_MKNOD_CHAR_DEVICES
+/*
+ * Whitelist some basic devices. These devices have all of these particularly
+ * safe characteristics:
+ * 1) Limited on-disk size (Most regular files will take more space)
+ * 2) Limited in-memory effective size
+ * 3) Pseudo devices/RAM access only
+ * 4) Volatile (userspace doesn't expect device contents to persist)
+ * 5) Insanely-low CPU usage for reads/writes
+ * 6) Never shared; Private
+ */
+static inline bool is_whitelisted_mknod_char_dev(mode_t mode, dev_t dev)
+{
+	if (!S_ISCHR(mode) || MAJOR(dev) != MEM_MAJOR)
+		return false;
+	switch(MINOR(dev)) {
+	case DEV_NULL_MINOR:
+	case DEV_ZERO_MINOR:
+	case DEV_FULL_MINOR:
+		return true;
+	default:
+		return false;
+	}
+}
+#else
+static inline bool is_whitelisted_mknod_char_dev(mode_t mode, dev_t dev)
+{
+	return false;
+}
+#endif /* CONFIG_WHITELIST_MKNOD_CHAR_DEVICES */
 
 #endif
