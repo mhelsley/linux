@@ -31,12 +31,11 @@
 #include <linux/uio.h>
 #include <linux/uaccess.h>
 #include <linux/security.h>
+#include <linux/mem_minor.h>
 
 #ifdef CONFIG_IA64
 # include <linux/efi.h>
 #endif
-
-#define DEVPORT_MINOR	4
 
 static inline unsigned long size_inside_page(unsigned long start,
 					     unsigned long size)
@@ -890,12 +889,12 @@ static const struct memdev {
 #ifdef CONFIG_DEVKMEM
 	 [2] = { "kmem", 0, &kmem_fops, FMODE_UNSIGNED_OFFSET },
 #endif
-	 [3] = { "null", 0666, &null_fops, 0 },
+	 [DEV_NULL_MINOR] = { "null", 0666, &null_fops, 0 },
 #ifdef CONFIG_DEVPORT
-	 [4] = { "port", 0, &port_fops, 0 },
+	 [DEV_PORT_MINOR] = { "port", 0, &port_fops, 0 },
 #endif
-	 [5] = { "zero", 0666, &zero_fops, 0 },
-	 [7] = { "full", 0666, &full_fops, 0 },
+	 [DEV_ZERO_MINOR] = { "zero", 0666, &zero_fops, 0 },
+	 [DEV_FULL_MINOR] = { "full", 0666, &full_fops, 0 },
 	 [8] = { "random", 0666, &random_fops, 0 },
 	 [9] = { "urandom", 0666, &urandom_fops, 0 },
 #ifdef CONFIG_PRINTK
@@ -958,7 +957,7 @@ static int __init chr_dev_init(void)
 		/*
 		 * Create /dev/port?
 		 */
-		if ((minor == DEVPORT_MINOR) && !arch_has_dev_port())
+		if ((minor == DEV_PORT_MINOR) && !arch_has_dev_port())
 			continue;
 
 		device_create(mem_class, NULL, MKDEV(MEM_MAJOR, minor),
