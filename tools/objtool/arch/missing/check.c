@@ -8,7 +8,9 @@
 
 const char *objname;
 
-int __attribute__ ((weak)) check(const char *_objname, bool orc)
+int missing_check(const char *_objname, bool orc)
 {
 	return 127;
 }
+
+int __attribute__ ((weak, alias("missing_check"))) check(const char *_objname, bool orc);

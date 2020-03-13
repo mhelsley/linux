@@ -11,6 +11,7 @@ struct objtool_file;
 int create_orc(struct objtool_file *file);
 int create_orc_sections(struct objtool_file *file);
 
+int missing_orc_dump(const char *objname);
 int orc_dump(const char *objname);
 
 #endif /* _ORC_H */

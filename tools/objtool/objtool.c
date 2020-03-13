@@ -27,21 +27,22 @@ struct cmd_struct {
 	const char *name;
 	int (*fn)(int, const char **);
 	const char *help;
+	bool (*is_available)(void);
 };
 
 static const char objtool_usage_string[] =
 	"objtool COMMAND [ARGS]";
 
 static struct cmd_struct objtool_cmds[] = {
-	{"check",	cmd_check,	"Perform stack metadata validation on an object file" },
-	{"orc",		cmd_orc,	"Generate in-place ORC unwind tables for an object file" },
+	{"check",	cmd_check,	"Perform stack metadata validation on an object file", is_cmd_check_available },
+	{"orc",		cmd_orc,	"Generate in-place ORC unwind tables for an object file", is_cmd_orc_available },
 };
 
 bool help;
 
 static void cmd_usage(void)
 {
-	unsigned int i, longest = 0;
+	unsigned int i, longest = 0, num_unavail = 0;
 
 	printf("\n usage: %s\n\n", objtool_usage_string);
 
@@ -52,8 +53,26 @@ static void cmd_usage(void)
 
 	puts(" Commands:");
 	for (i = 0; i < ARRAY_SIZE(objtool_cmds); i++) {
-		printf("   %-*s   ", longest, objtool_cmds[i].name);
-		puts(objtool_cmds[i].help);
+		struct cmd_struct *p = objtool_cmds+i;
+
+		if (!p->is_available()) {
+			num_unavail++;
+			continue;
+		}
+		printf("   %-*s   ", longest, p->name);
+		puts(p->help);
+	}
+
+	if (num_unavail > 0) {
+		puts("\n Unavailable commands on this architecture:");
+		for (i = 0; i < ARRAY_SIZE(objtool_cmds); i++) {
+			struct cmd_struct *p = objtool_cmds+i;
+
+			if (p->is_available())
+				continue;
+			printf("   %-*s   ", longest, p->name);
+			puts(p->help);
+		}
 	}
 
 	printf("\n");
@@ -95,6 +114,11 @@ static void handle_internal_command(int argc, const char **argv)
 
 		if (strcmp(p->name, cmd))
 			continue;
+
+		if (!p->is_available()) {
+			fprintf(stderr, "command %s is not available on this architecture\n", cmd);
+			exit(127);
+		}
 
 		ret = p->fn(argc, argv);
 

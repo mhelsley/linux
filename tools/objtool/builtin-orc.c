@@ -23,6 +23,13 @@ static const char *orc_usage[] = {
 	NULL,
 };
 
+bool is_cmd_orc_available(void)
+{
+	if (check == missing_check)
+		return false;
+	return orc_dump != missing_orc_dump;
+}
+
 int cmd_orc(int argc, const char **argv)
 {
 	const char *objname;

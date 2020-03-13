@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include "objtool.h"
 
+int missing_check(const char *objname, bool orc);
 int check(const char *objname, bool orc);
 
 struct instruction *find_insn(struct objtool_file *file,

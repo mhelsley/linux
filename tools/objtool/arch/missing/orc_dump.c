@@ -5,7 +5,9 @@
 
 #include "../../orc.h"
 
-int __attribute__ ((weak)) orc_dump(const char *_objname)
+int missing_orc_dump(const char *_objname)
 {
 	return 127;
 }
+
+int __attribute__ ((weak, alias("missing_orc_dump"))) orc_dump(const char *_objname);

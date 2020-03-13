@@ -35,6 +35,11 @@ const struct option check_options[] = {
 	OPT_END(),
 };
 
+bool is_cmd_check_available(void)
+{
+	return check != missing_check;
+}
+
 int cmd_check(int argc, const char **argv)
 {
 	const char *objname;
