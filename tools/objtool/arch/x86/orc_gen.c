@@ -5,10 +5,13 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <asm/orc_types.h>
 
-#include "orc.h"
-#include "check.h"
-#include "warn.h"
+#include "../../orc.h"
+#include "cfi.h"
+#include "arch.h"
+#include "../../check.h"
+#include "../../warn.h"
 
 int create_orc(struct objtool_file *file)
 {

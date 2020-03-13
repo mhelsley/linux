@@ -1,0 +1,3 @@
+objtool-y += check.o
+objtool-y += orc_gen.o
+objtool-y += orc_dump.o

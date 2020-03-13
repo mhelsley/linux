@@ -15,7 +15,7 @@
 #include <string.h>
 #include "builtin.h"
 #include "check.h"
-
+#include "orc.h"
 
 static const char *orc_usage[] = {
 	"objtool orc generate [<options>] file.o",

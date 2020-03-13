@@ -4,8 +4,9 @@
  */
 
 #include <unistd.h>
-#include "orc.h"
-#include "warn.h"
+#include <asm/orc_types.h>
+#include "../../orc.h"
+#include "../../warn.h"
 
 static const char *reg_name(unsigned int reg)
 {

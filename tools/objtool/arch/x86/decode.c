@@ -12,7 +12,7 @@
 #include "../../../arch/x86/lib/insn.c"
 
 #include "../../elf.h"
-#include "../../arch.h"
+#include "arch.h"
 #include "../../warn.h"
 
 static unsigned char op_to_cfi_reg[][2] = {

@@ -6,12 +6,13 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "builtin.h"
-#include "check.h"
-#include "elf.h"
-#include "special.h"
+#include "../../builtin.h"
+#include "cfi.h"
 #include "arch.h"
-#include "warn.h"
+#include "../../check.h"
+#include "../../elf.h"
+#include "special.h"
+#include "../../warn.h"
 
 #include <linux/hashtable.h>
 #include <linux/kernel.h>

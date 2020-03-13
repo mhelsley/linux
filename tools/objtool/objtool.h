@@ -17,4 +17,4 @@ struct objtool_file {
 	DECLARE_HASHTABLE(insn_hash, 20);
 	bool ignore_unreachables, c_file, hints, rodata;
 };
-#endif
+#endif /* _OBJTOOL_H */
