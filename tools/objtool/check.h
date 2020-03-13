@@ -7,11 +7,10 @@
 #define _CHECK_H
 
 #include <stdbool.h>
-#include "elf.h"
+#include "objtool.h"
 #include "cfi.h"
 #include "arch.h"
 #include "orc.h"
-#include <linux/hashtable.h>
 
 struct insn_state {
 	struct cfi_reg cfa;
@@ -45,13 +44,6 @@ struct instruction {
 	struct stack_op stack_op;
 	struct insn_state state;
 	struct orc_entry orc;
-};
-
-struct objtool_file {
-	struct elf *elf;
-	struct list_head insn_list;
-	DECLARE_HASHTABLE(insn_hash, 20);
-	bool ignore_unreachables, c_file, hints, rodata;
 };
 
 int check(const char *objname, bool orc);
