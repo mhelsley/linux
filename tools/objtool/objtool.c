@@ -58,7 +58,10 @@ static void cmd_usage(void)
 
 	printf("\n");
 
-	exit(129);
+	if (!help)
+		exit(129);
+	else
+		exit(0);
 }
 
 static void handle_options(int *argc, const char ***argv)
