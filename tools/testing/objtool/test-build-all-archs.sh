@@ -529,13 +529,15 @@ function binfmt_enabled()
 	debug "binaries for ${QA} are executable"
 }
 
+DO_ASK_INSTALL=""
+
 function toolchain_installed()
 {
 	local TOOLCHAIN="$1"
 
 	if [ '!' -x "$(which "${TOOLCHAIN}-objdump")" ]; then
 		PKG_EXISTS=$(apt-cache search "binutils-${TOOLCHAIN}" | wc -l)
-		if (( PKG_EXISTS > 0 )); then
+		if (( PKG_EXISTS > 0 )) && [ -n "${DO_ASK_INSTALL}" ]; then
 			info "Installing binutils for ${TOOLCHAIN}"
 			sudo apt-get install "binutils-${TOOLCHAIN}"
 		else
@@ -544,7 +546,7 @@ function toolchain_installed()
 	fi
 	if [ '!' -x "$(which "${TOOLCHAIN}-gcc")" ]; then
 		PKG_EXISTS=$(apt-cache search "gcc-${TOOLCHAIN}" | wc -l )
-		if (( PKG_EXISTS > 0 )); then
+		if (( PKG_EXISTS > 0 )) && [ -n "${DO_ASK_INSTALL}" ]; then
 			info "Installing compiler for ${TOOLCHAIN}"
 			sudo apt-get install "gcc-${TOOLCHAIN}"
 		else
@@ -559,6 +561,35 @@ function toolchain_installed()
 
 	return 0
 }
+
+##
+# Install binutils and compiler packages for cross-compilation.
+# We reuse the automatic install helping-bits from toolchain_installed
+#
+# TODO add porcelain to make use of this function
+##
+function easy_install()
+{
+	for A in "" "${!KARCH[@]}"; do
+		if [ -n "${A}" ]; then
+				 # Note lack of quotes
+			TOOLCS=( ${KARCH_TO_DEB_TC["${A}"]} ) || continue
+		else
+			TOOLCS=( "" )
+		fi
+
+		for TOOLCHAIN in "${TOOLCS[@]}" ; do
+			if toolchain_installed "${TOOLCHAIN}" ; then
+				continue
+			fi
+		done
+	done
+}
+
+DO_EASY_INSTALL=""
+if [ -n "${DO_ASK_INSTALL}" -a -n "${DO_EASY_INSTALL}" ]; then
+	easy_install
+fi
 
 #
 # Filter out those qemu arches we don't have and the kernel archs
