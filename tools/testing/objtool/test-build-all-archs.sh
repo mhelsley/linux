@@ -3,12 +3,11 @@ function setrc()
 {
 	return $1
 }
-set -e
+set -eE
 
 if which git > /dev/null 2> /dev/null ; then
 	. "$(git --exec-path)/git-sh-setup"
-	if SRC_TOP=$(git rev-parse --show-toplevel) ; then
-		/bin/true
+	if SRC_TOP=$(git rev-parse --show-toplevel) ; then : ;
 	else
 		SRC_TOP="${GIT_DIR:-$(pwd)}"
 	fi
@@ -18,13 +17,13 @@ else
 	SRC_TOP=$(pwd)
 fi
 export SRC_TOP
-echo "SRC_TOP: \"${SRC_TOP}\""
+#echo "SRC_TOP: \"${SRC_TOP}\""
 
 # HACK: Tell git to not interact with the user
 export GIT_PAGER=cat
 export GIT_EDITOR=""
 
-trap 'RC=$? ; git log -n 1 --pretty=oneline HEAD ; trap '' ERR ; setrc ${RC}' ERR
+trap 'RC=$? ; git log -n 1 --pretty=oneline HEAD ; trap '' ERR ; exit ${RC}' ERR
 
 function __source_path()
 {
@@ -86,7 +85,7 @@ function dump_stack()
 		LNO=${BASH_LINENO[ $((I - 1)) ]}
 		FN="${FUNCNAME[$I]}()"
 		echo "${PFX}${SRC}:${LNO}: ${FN}${SFX}" || break
-		(( I++ ))
+		(( ++I ))
 	done
 }
 declare -gfr dump_stack
@@ -167,6 +166,19 @@ function infof()
 }
 declare -gfrt infof
 
+function test_failed()
+{
+        if [[ -v 'QUIET[FAIL]' ]]; then return 0; fi
+	echo "FAIL: " "$@" >&2
+	traceme FAIL
+}
+declare -gfrt test_failed
+function test_failedf()
+{
+	test_failed "$(printf "$@")"
+}
+declare -gfrt test_failedf
+
 function debug()
 {
         if [[ -v 'QUIET[DEBUG]' ]]; then return 0; fi
@@ -190,7 +202,7 @@ function report_error()
 	__error 1 "caught exit code ${RC}"
 }
 
-trap 'RC=$? ; report_error ${RC} ; trap '' ERR; setrc ${RC}' ERR
+trap 'RC=$? ; trap '' ERR ; report_error ${RC} ; exit ${RC}' ERR
 
 # The set of kernel architectures
 #
@@ -198,7 +210,8 @@ trap 'RC=$? ; report_error ${RC} ; trap '' ERR; setrc ${RC}' ERR
 #	any indication of the correct multiplicity
 #
 declare -Ag KARCH=(
-	[alpha]="big 64"
+# TODO test later? No recordmcount support at all??
+#	[alpha]="big 64"
 	[arc]="little 32"
 	[arm]="little 32"
 	[arm64]="little 64"
@@ -207,7 +220,8 @@ declare -Ag KARCH=(
 	[h8300]="h8300"
 	[hexagon]="hexagon"
 	[ia64]="little 64"
-	[m68k]="big 32"
+# No recordmcount support at all
+#	[m68k]="big 32"
 	[microblaze]="microblaze"
 	[mips]="little 64"
 	[nds32]="little 32"
@@ -216,7 +230,8 @@ declare -Ag KARCH=(
 # TODO takes forever
 #	[parisc]="big 32"
 	[powerpc]="little 64"
-	[riscv]="little 64"
+# TODO test later?
+#	[riscv]="little 64"
 	[s390]="big 64"
 	[sh]="little 32"
 	[sparc]="big 64"
@@ -226,6 +241,9 @@ declare -Ag KARCH=(
 	[xtensa]="xtensa"
 )
 
+# TODO
+# missing mcount section at:
+# 1f62eedc95e55ac36b11a226cc7ffb082a152e93 (HEAD) objtool: mcount: Walk relocation lists
 function map_kconfig_symbol()
 {
 	local SYM="$1"
@@ -271,9 +289,13 @@ declare -Ag KARCH_TO_DEB_TC=(
 	[arm64]="aarch64-linux-gnu"
 	[ia64]="ia64-linux-gnu"
 	[m68k]="m68k-linux-gnu"
-	[mips]="mips64el-linux-gnuabi64" # mipsel-linux-gnu" # Missing gcc for mips-linux-gnu"
+	[mips]="mips64el-linux-gnuabi64"
+		# mipsel-linux-gnu" # Missing gcc for mips-linux-gnu"
+
 # TODO takes forever
-#	[parisc]="hppa-linux-gnu" # hppa64-linux-gnu" # QEMU does not support 64-bit
+#	[parisc]="hppa-linux-gnu"
+		# hppa64-linux-gnu" # QEMU does not support 64-bit
+
 	[powerpc]="powerpc64le-linux-gnu powerpc64-linux-gnu powerpc-linux-gnu"
 	[riscv]="riscv64-linux-gnu"
 	[s390]="s390x-linux-gnu"
@@ -294,8 +316,10 @@ declare -Ag KARCH_TO_QEMU_ARCH=(
 	[mips]="mips64el" # mipsel" # missing compiler for mips" # Also  mips64
 	[nios2]="nios2"
 	[openrisc]="or1k"
+
 # TODO takes forever
 #	[parisc]="hppa"
+
 	[powerpc]="ppc64le ppc64 ppc"
 	[riscv]="riscv64" # Also riscv32
 	[s390]="s390x"
@@ -319,9 +343,10 @@ function elem_width()
 	trap 'trap "" RETURN ; eval "${RESTORE}"' RETURN
 	set +e
 
-        (( W = 0 ))
-        for I in "${A[@]}" ; do
-                (( W = W < ${#I} ? ${#I} : W ))
+	W=0
+	for (( I=0; I < ${#A[@]} ; I++ )); do
+		X="${A[$I]}"
+                (( W = W < ${#X} ? ${#X} : W ))
         done
 }
 
@@ -370,6 +395,9 @@ function get_karch_from_gen_headers()
 	    tail -n 1 | sed -e 's/^ \* Linux\/\(.[^ ]*\) .*$/\1/'
 }
 
+echo -n "INFO: "
+git log -n 1 --pretty=oneline HEAD
+
 ##
 # Make parameters
 ##
@@ -382,28 +410,161 @@ else
 fi
 LOG_FILE=make.log
 
+function check_obj_mcount()
+{
+	local TOOLCHAIN="$1"
+	local TOOLCHAIN_="${TOOLCHAIN:+${TOOLCHAIN}-}"
+	local CMD="$2"
+	local OBJ="$3"
+
+	[ -r "${OBJ}" ]
+
+	debug "Checking the objdump output to make sure we added an __mcount_loc section"
+	local RESTORE="$(set +o) ; $(trap -p ERR)"
+	trap 'trap "" RETURN ; eval "${RESTORE}"' RETURN
+	set +e
+	set -o pipefail
+	trap '' ERR
+
+	local MSG
+	local RC
+	if [ -r "${BO}/tools/testing/objtool/foo.ref.o.dump" ]; then
+	debug "Checking and comparing to reference mcount data"
+	MSG="$("${TOOLCHAIN_}objdump" -x -j __mcount_loc -s "${OBJ}" \
+		2> /dev/null | \
+		tail -n +2 | \
+		awk -f "${SRC_TOP}/tools/testing/objtool/diff-obj-mcount.awk" \
+			-- - "${BO}/tools/testing/objtool/foo.ref.o.dump" )"
+	else
+	debug "Checking mcount data"
+	MSG="$("${TOOLCHAIN_}objdump" -x -j __mcount_loc -s "${OBJ}" \
+		2> /dev/null | \
+		tail -n +2 | \
+		awk -f "${SRC_TOP}/tools/testing/objtool/diff-obj-mcount.awk")"
+	fi
+	RC=$?
+	if (( RC != 0 )); then
+		test_failed "$(basename "${CMD}"):${OBJ##$(pwd)/}: ${MSG}"
+		#"${TOOLCHAIN_}objdump" -x -j __mcount_loc -s "${OBJ}" | less
+	else
+		debug "PASS: $(basename "${CMD}")"
+	fi
+}
+
+function make_mcount_samples()
+{
+	local TOOLCHAIN_="$1"
+	local BO="$2"
+
+
+	# Build our sample input(s)
+	# TODO make it use the kernel build bits so we can get stuff that
+	#	looks more like what objtool will really see
+	# TODO build all the sample .c files -- don't list each individual
+	#	sample in this script
+	"${TOOLCHAIN_}gcc" -Wall -pg -O0 -g \
+			-c "${SRC_TOP}/tools/testing/objtool/foo.c" \
+			-o "${BO}/tools/testing/objtool/foo.o" \
+			>> "${LOG}" 2>&1
+
+	if [ -r "${BO}/tools/testing/objtool/gcc-has-record-mcount" ]; then
+	#
+	# Toolchain GCC has its own record mcount implementation.
+	# Use it as a reference sample of mcount output for comparison
+	# NOTE: Since GCC doesn't change over the course of our testing
+	#	we just need to produce this file once.
+	#
+	if [ '!' -r "${BO}/tools/testing/objtool/foo.ref.o.dump" -o \
+			"${SRC_TOP}/tools/testing/objtool/foo.c" -nt \
+			"${BO}/tools/testing/objtool/foo.ref.o.dump" \
+		]; then
+
+		"${TOOLCHAIN_}gcc" -Wall -pg -O0 -g -mrecord-mcount \
+			-c "${SRC_TOP}/tools/testing/objtool/foo.c" \
+			-o "${BO}/tools/testing/objtool/foo.ref.o" \
+			>> "${LOG}" 2>&1
+		"${TOOLCHAIN_}objdump" -x -j __mcount_loc -s "${BO}/tools/testing/objtool/foo.ref.o" 2> /dev/null | tail -n +2 > "${BO}/tools/testing/objtool/foo.ref.o.dump"
+		rm -f "${BO}/tools/testing/objtool/foo.ref.o"
+	fi
+	fi
+}
+
+function run_test_cmd()
+{
+	local RESTORE="$(trap -p ERR)"
+	trap 'trap "" RETURN ; eval "${RESTORE}"' RETURN
+	trap '' ERR
+
+	debug "$@"
+	"$@"
+	local RC=$?
+
+	if (( RC == 0 )); then
+		return 0;
+	fi
+
+	if (( RC > 128 )); then
+		REASON="Fatal signal $(kill -l $(( RC - 128 )))"
+	fi
+	case "${RC}" in
+	127) REASON="Command not found" ;;
+	126) REASON="Command lacks execute permission" ;;
+	*)   REASON="Exit status ${RC}" ;;
+	esac
+
+	error "Failed (${REASON}): \"$*\""
+	return ${RC}
+}
+
 function test_obj_cmd_combos()
 {
-	local CMD="$1"
-	local BO="$2"
-	shift 2
+	local TOOLCHAIN="$1"
+	local CMD="$2"
+	local BO="$3"
+	shift 3
+
+	local TOOLCHAIN_="${TOOLCHAIN:+${TOOLCHAIN}-}"
+
+	# Indicate if the toolchain compiler supports -mrecord-mcount
+	if "${TOOLCHAIN_}gcc" -Werror -mrecord-mcount -c -x c /dev/null \
+		-o "${BO}/tools/testing/objtool/gcc-has-record-mcount" 2> /dev/null ; then : ;
+	fi
 
 	for OPT in "" "-w" ; do
+		if [ "${OPT}" == "-w" -a "${CMD: -3}" == ".pl" ]; then
+			# Perl script doesn't take -w option
+			continue
+		fi
+		debug "Building foo.o"
+		mkdir -p "${BO}/tools/testing/objtool"
+		make_mcount_samples "${TOOLCHAIN_}" "${BO}"
 		for S in "${BO}/tools/testing/objtool/"*.o ; do
 			[ -r "${S}" ]
-			"${CMD}" $@ ${OPT} "${S}"
+			run_test_cmd "${CMD}" $@ ${OPT} "${S}"
+			check_obj_mcount "${TOOLCHAIN}" "${CMD}" "${S}"
 		done
-		# TODO test multiple objs on the command line
-		#"${CMD}" $@ ${OPT} "${BO}/tools/testing/objtool/"*.o
+
+		case "${CMD: -3}" in
+		.pl) continue ;; # Perl script doesn't handle multiple objs
+		*)
+			# Test multiple objs on the command line
+			make_mcount_samples "${TOOLCHAIN_}" "${BO}"
+			run_test_cmd "${CMD}" $@ ${OPT} "${BO}/tools/testing/objtool/"*.o
+			for S in "${BO}/tools/testing/objtool/"*.o ; do
+				check_obj_mcount "${TOOLCHAIN}" "${CMD}" "${S}"
+			done
+			;;
+		esac
 	done
 }
 
 function test_objtool_mcount()
 {
-	local BO="$1"
+	local TOOLCHAIN="$1"
+	local BO="$2"
 	local OT="${BO}/tools/objtool/objtool"
 
-	info "Checking for \"${OT}\""
+	debug "Checking for \"${OT}\""
 	[ -x "${OT}" ]
 
 	debug "Trying \"${OT}\" --help"
@@ -411,36 +572,47 @@ function test_objtool_mcount()
 
 	if [ -f "${BO}/../tools/objtool/builtin-mcount.c" ]; then
 		objtool_has_cmd "${OT}" mcount
-		info "\"${OT}\" has mcount"
+		debug "\"${OT}\" has mcount"
+		test_obj_cmd_combos "${TOOLCHAIN}" "${OT}" "${BO}" mcount record
 	else
-		error "\"${OT}\" lacks mcount"
+		debug "\"${OT}\" lacks mcount"
 	fi
-
-	test_obj_cmd_combos "${OT}" "${BO}"
 }
 
 function test_recordmcount()
 {
-	local BO="$1"
+	local TOOLCHAIN="$1"
+	local BO="$2"
 	local OT="${BO}/scripts/recordmcount"
 
-	[ -x "${OT}" ]
-	test_obj_cmd_combos "${OT}" "${BO}"
+	if [ '!' -x "${OT}" ]; then
+	if [ -x "${BO}/tools/objtool/recordmcount" ]; then
+		OT="${BO}/tools/objtool/recordmcount"
+	else
+		return 0
+	fi
+	fi
+	test_obj_cmd_combos "${TOOLCHAIN}"  "${OT}" "${BO}"
 }
 
 function test_recordmcount_perl()
 {
-	local BO="$1"
+	local TOOLCHAIN="$1"
+	local BO="$2"
 	local OT="${SRC_TOP}/scripts/recordmcount.pl"
 
-	[ -x "${OT}" ]
+	if [ '!' -x "${OT}" ]; then
+	if [ -x "${BO}/tools/objtool/recordmcount.pl" ]; then
+		OT="${BO}/tools/objtool/recordmcount.pl"
+	else
+		return 0
+	fi
+	fi
+
 	local A="$(get_karch_from_gen_headers "${BO}")"
 	local ENDIAN="little"
 	local BITS=64
-	local TOOLCHAIN=""
 
-	TOOLCHAIN="$(basename "${BO}")"
-	TOOLCHAIN="${TOOLCHAIN#build-}"
 	case "${A}" in
 	sparc*|s390*|powerpc|ppc64|ppc|m68k|parisc|alpha)
 		ENDIAN="big" ;;
@@ -458,15 +630,19 @@ function test_recordmcount_perl()
 	esac
 
 	#usage: recordmcount.pl arch endian bits objdump objcopy cc ld nm rm mv is_module inputfile
-	test_obj_cmd_combos "${OT}" "${BO}" \
+	local TOOLCHAIN_="${TOOLCHAIN}"
+	if [ -n "${TOOLCHAIN_}" ]; then
+		TOOLCHAIN_+="-"
+	fi
+	test_obj_cmd_combos "${TOOLCHAIN}" "${OT}" "${BO}" \
 		"${A}" \
 		"${ENDIAN}" \
 		"${BITS}" \
-		"${TOOLCHAIN}-objdump" \
-		"${TOOLCHAIN}-objcopy" \
-		"${TOOLCHAIN}-gcc" \
-		"${TOOLCHAIN}-ld" \
-		"${TOOLCHAIN}-nm" \
+		"${TOOLCHAIN_}objdump" \
+		"${TOOLCHAIN_}objcopy" \
+		"${TOOLCHAIN_}gcc" \
+		"${TOOLCHAIN_}ld" \
+		"${TOOLCHAIN_}nm" \
 		rm \
 		mv \
 		0
@@ -474,21 +650,22 @@ function test_recordmcount_perl()
 
 function test_obj_samples()
 {
-	local BO="$1"
+	local TOOLCHAIN="$1"
+	local BO="$2"
 	local C=0
 
-	if [ -x "${BO}/scripts/recordmcount" ]; then
-		test_recordmcount   "${BO}"
-		(( C++ ))
+	if [ -x "${BO}/scripts/recordmcount" -o -x "${BO}/tools/objtool/recordmcount" ]; then
+		test_recordmcount   "${TOOLCHAIN}" "${BO}"
+		(( ++C ))
 	fi
 	if [ -x "${BO}/tools/objtool/objtool" ]; then
-		test_objtool_mcount "${BO}"
-		(( C++ ))
+		test_objtool_mcount "${TOOLCHAIN}" "${BO}"
+		(( ++C ))
 	fi
 	if (( C < 1 )); then
-		if [ -x "${SRC_TOP}/scripts/recordmcount.pl" ]; then
-			test_recordmcount_perl "${BO}"
-			(( C++ ))
+		if [ -x "${SRC_TOP}/scripts/recordmcount.pl" -o -x "${SRC_TOP}/tools/objtool/recordmcount.pl" ]; then
+			test_recordmcount_perl "${TOOLCHAIN}" "${BO}"
+			(( ++C ))
 		fi
 	fi
 	if (( C < 1 )); then
@@ -567,10 +744,11 @@ function toolchain_installed()
 # We reuse the automatic install helping-bits from toolchain_installed
 #
 # TODO add porcelain to make use of this function
+# TODO add qemu and qemu binfmt misc packages
 ##
 function easy_install()
 {
-	for A in "" "${!KARCH[@]}"; do
+	for A in "${!KARCH[@]}"; do
 		if [ -n "${A}" ]; then
 				 # Note lack of quotes
 			TOOLCS=( ${KARCH_TO_DEB_TC["${A}"]} ) || continue
@@ -595,7 +773,7 @@ fi
 # Filter out those qemu arches we don't have and the kernel archs
 # we don't have any qemu -static support registered for.
 #
-info "Determining host cross compilation support"
+debug "Determining host cross compilation support"
 for A in "${!KARCH[@]}"; do
 	QARCHS=( ${KARCH_TO_QEMU_ARCH[${A}]} ) # note lack of quotes
 	TOOLCS=( ${KARCH_TO_DEB_TC[${A}]} ) # note lack of quotes
@@ -629,6 +807,8 @@ for A in "${!KARCH[@]}"; do
 		debug "build: ARCH=${A} VMs: ${QARCHS[*]} Toolchains: ${TOOLCS[*]}"
 	fi
 done
+
+ITERATION=0
 
 #
 # NOTE: The host architecture and default toolchain are specified as empty
@@ -664,6 +844,7 @@ for A in "" "${!KARCH[@]}"; do
 		fi
 		OBO="O=${BO}"
 
+		debug "Making directory for build objects"
 		mkdir -p "${BO}"
 		if [ -n "${LOG_FILE}" ]; then
 			BLOG="${BO}/${LOG_FILE}"
@@ -671,11 +852,10 @@ for A in "" "${!KARCH[@]}"; do
 		LOG="${BLOG:-/dev/null}"
 
 		MAKE=( "make" ${OBO} ${OA} ${OXC} )
-		infof 'Arch: %-*s  Toolchain: "%s"\n' "${WKA}" "${A:-HOST}" "${TOOLCHAIN}"
+		infof 'Arch: %-*s  %sToolchain: "%s"\n' "${WKA}" "${A:-HOST}" "${OXC:+Cross }" "${TOOLCHAIN}"
 
-		# Ensure the kernel has a base .config
-		if "${MAKE[@]}" "defconfig" > "${LOG}" 2>&1 ; then
-			/bin/true
+		debug "Using defaults as a base configuration"
+		if "${MAKE[@]}" "defconfig" > "${LOG}" 2>&1 ; then : ;
 		else
 			RC=$?
 			if [ -f "${LOG}" -a -r "${LOG}" ]; then
@@ -709,29 +889,41 @@ for A in "" "${!KARCH[@]}"; do
 		fi
 
 		if (( ${#CFG_EDITS[@]} > 0 )); then
-		if "${SRC_TOP}/scripts/config" --file "${BO}/.config" \
-			"${CFG_EDITS[@]}" ; then
-			/bin/true
-		else
-			error "Failed to configure ARCH=${A} ${OXC}"
-		fi
-
-		# Fix up any config blunders
-		if "${MAKE[@]}" olddefconfig > "${LOG}" 2>&1 ; then
-			/bin/true
-		else
-			RC=$?
-			if [ -f "${LOG}" -a -r "${LOG}" ]; then
-				cat "${LOG}"
+			debug "Modifying configuration: ${CFG_EDITS[*]}"
+			if "${SRC_TOP}/scripts/config" --file "${BO}/.config" \
+				"${CFG_EDITS[@]}" ; then : ;
+			else
+				error "Failed to configure ARCH=${A} ${OXC}"
 			fi
-			setrc ${RC}
-			error "Failed to build ARCH=${A} ${OXC}"
-		fi
+
+			# Fix up any config blunders
+			if "${MAKE[@]}" olddefconfig > "${LOG}" 2>&1 ; then : ;
+			else
+				RC=$?
+				if [ -f "${LOG}" -a -r "${LOG}" ]; then
+					cat "${LOG}"
+				fi
+				setrc ${RC}
+				error "Failed to patch config ARCH=${A} ${OXC}"
+			fi
 		fi # One or more CFG_EDITS
 
+		# Clean stale artifacts to test
+		debug "Cleaning potentially-stale build"
+		if "${MAKE[@]}" "-j${J}" clean > "${LOG}" 2>&1 ; then : ;
+		else
+			RC=$?
+			if [ -f "${LOG}" -a -r "${LOG}" ]; then
+				cat "${LOG}"
+			fi
+			setrc ${RC}
+			error "Failed to clean ARCH=${A} ${OXC}"
+		fi
+		rm -f "${BO}/tools/testing/objtool/"*.o*
+
+
 		# Build our artifacts to test
-		if "${MAKE[@]}" "-j${J}" "${TARGETS[@]}" > "${LOG}" 2>&1 ; then
-			/bin/true
+		if "${MAKE[@]}" "-j${J}" "${TARGETS[@]}" > "${LOG}" 2>&1 ; then : ;
 		else
 			RC=$?
 			if [ -f "${LOG}" -a -r "${LOG}" ]; then
@@ -741,13 +933,16 @@ for A in "" "${!KARCH[@]}"; do
 			error "Failed to build ARCH=${A} ${OXC}"
 		fi
 
-		# Build our sample input
-		info "Building foo.o"
-		mkdir -p "${BO}/tools/testing/objtool"
-		"${TOOLCHAIN:+${TOOLCHAIN}-}gcc" -Wall -g -c "tools/testing/objtool/foo.c" -o "${BO}/tools/testing/objtool/foo.o" >> "${LOG}" 2>&1
-
 		# Use the test artifacts to process the sample input
-		test_obj_samples "${BO}"
+		if [ "${ITERATION}" == "1"  ]; then
+			#set -x
+			test_obj_samples "${TOOLCHAIN}" "${BO}"
+			#set +x
+			(( ++ITERATION ))
+		else
+			test_obj_samples "${TOOLCHAIN}" "${BO}"
+			(( ++ITERATION ))
+		fi
 	done
 done
 
